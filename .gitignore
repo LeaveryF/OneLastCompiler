@@ -1,0 +1,13 @@
+.idea
+.vscode
+.vs
+
+build
+cmake-build-*
+crash-*
+
+# clangd cache
+.cache/
+
+# VS CMake personal config
+CMakeSettings.json
