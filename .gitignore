@@ -6,6 +6,9 @@ build
 cmake-build-*
 crash-*
 
+# antlr
+.antlr
+
 # clangd cache
 .cache/
 

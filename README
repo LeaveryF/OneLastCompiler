@@ -1,0 +1,33 @@
+antlr官网: https://www.antlr.org/
+antlr github: https://github.com/antlr/antlr4
+antlr文档: https://github.com/antlr/antlr4/blob/master/doc/index.md
+antlr教程: https://github.com/antlr/antlr4/blob/master/doc/getting-started.md
+antlr构建: https://github.com/antlr/antlr4/blob/master/doc/building-antlr.md
+**antlr c++文档: https://github.com/antlr/antlr4/blob/master/doc/cpp-target.md
+
+antlr c++ runtime文档: https://github.com/antlr/antlr4/tree/master/runtime/Cpp
+antlr c++ cmake文档: https://github.com/antlr/antlr4/tree/master/runtime/Cpp/cmake
+antlr c++ cmake教程: https://beyondtheloop.dev/Antlr-cpp-cmake/
+
+antlr语法示例: https://github.com/antlr/grammars-v4
+antlr语法示例 - c: https://github.com/antlr/grammars-v4/blob/master/c/C.g4
+antlr语法示例 - c++: https://github.com/antlr/grammars-v4/tree/master/cpp
+
+antlr简明教程: https://wizardforcel.gitbooks.io/antlr4-short-course
+antlr教程: https://tomassetti.me/antlr-mega-tutorial/
+**antlr c++ 教程: https://tomassetti.me/getting-started-antlr-cpp/
+北航编译实验: https://buaa-se-compiling.github.io/miniSysY-tutorial/
+**antlr runtime api(只找到java的): https://www.antlr.org/api/Java/org/antlr/v4/runtime/package-summary.html
+antlr教程: https://blog.csdn.net/qq_37771475/article/details/106546742
+
+
+antlr需要运行时环境antlr-runtime 官网有源码提供
+
+cmake第一次构建会从github克隆antlr4-runtime
+
+/antlr antlr生成的文件 包括visitor/parser.h/cpp 生成一次后直接使用即可 但是目前还需要完善
+/cmake antlr相关的cmake构建文件 直接搬antlr-runtime使用说明的 不用修改
+/include 头文件
+/src 源文件
+/test 测试
+

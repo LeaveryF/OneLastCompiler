@@ -1,0 +1,26 @@
+安装antlr-4.13.1.jar 需要java-11环境 vscode有antlr插件
+安装见官网https://www.antlr.org/download.html
+或https://github.com/antlr/antlr4/releases
+
+先编写.g4语法规则文件
+
+然后运行：
+antlr4 -Dlanguage=Cpp sysy2022.g4 -visitor -no-listener
+自动生成若干相关.h/cpp文件
+
+克隆仓库已经生成.h/cpp文件 无需以上步骤
+对于antlr 生成一次即可
+但如需修改.g4文件则需要重新生成
+
+往后只需直接使用sysy2022Parser/Visitor.h即可
+
+
+sysy2022.g4: 语法文件 antlr-4.13.1.jar的输入 参考sysy2022的语法 也用于参考
+*.interp/tokens: 中间文件 不用管
+sysy2022Lexer.h/cpp: 词法分析器
+sysy2022Parser.h/cpp: 语法分析器
+sysy2022Visitor.h/cpp: 访问器基类 其成员函数都是纯虚函数
+sysy2022BaseVisitor.h/cpp: 访问器基类的一个默认实现 作用是单纯遍历整个语法树
+
+需要新的访问者类如codegen时 应继承sysy2022BaseVisitor 并重写需要的功能函数 其余函数使用sysy2022BaseVisitor的默认实现
+参考 https://tomassetti.me/getting-started-antlr-cpp/ - How to Use a Visitor
