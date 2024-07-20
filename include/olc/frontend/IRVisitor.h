@@ -3,8 +3,8 @@
 
 #include <iostream>
 
-#include "antlr4-runtime.h"
-#include "sysy2022BaseVisitor.h"
+#include <antlr4-runtime.h>
+#include <sysy2022BaseVisitor.h>
 
 class IRVisitor : public sysy2022BaseVisitor {
 public:

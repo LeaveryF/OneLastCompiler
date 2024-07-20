@@ -7,11 +7,12 @@
 #include <fstream>
 #include <iostream>
 
-#include "antlr4-runtime.h"
-#include "frontend/IRVisitor.h"
-#include "sysy2022Lexer.h"
-#include "sysy2022Parser.h"
-#include "sysy2022Visitor.h"
+#include <antlr4-runtime.h>
+#include <sysy2022Lexer.h>
+#include <sysy2022Parser.h>
+#include <sysy2022Visitor.h>
+
+#include <olc/frontend/IRVisitor.h>
 
 using namespace antlr4;
 
