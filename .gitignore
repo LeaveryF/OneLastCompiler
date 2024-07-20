@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .idea
 .vscode
 .vs
@@ -14,3 +15,12 @@ crash-*
 
 # VS CMake personal config
 CMakeSettings.json
+=======
+*
+*.*
+!*/
+!src/*
+!src/*/*
+!include/*
+!include/*/*
+>>>>>>> djh
