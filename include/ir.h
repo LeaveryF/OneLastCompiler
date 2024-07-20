@@ -4,13 +4,15 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <iostream>
+#include <cassert>
 
 // 前向声明
 struct Use;
 struct User;
 
 struct Value {
-    enum Tag { Add, Sub, Rsb, Mul, Div, Mod, Lt, Le, Ge, Gt, Eq, Ne, And, Or, Branch, Jump, Return, GetElementPtr, Load, Store, Call, Alloca, Phi, MemOp, MemPhi, Const, Global, Param, Undef, } tag;
+    enum Tag { Add, Sub, Rsb, Mul, Div, Mod, Lt, Le, Ge, Gt, Eq, Ne, And, Or, Branch, Jump, Return, GetElementPtr, Load, Store, Call, Alloca, Phi, MemOp, MemPhi, Const, Global, Param, Undef } tag;
     Value(Tag tag) : tag(tag) {}
     virtual ~Value() = default;
 
@@ -32,14 +34,13 @@ struct User : public Value {
     std::vector<Value *> operands;
     unsigned NumOperands;
 
-    User(Tag tag) : Value(tag) {}
-    User(Tag tag, std::vector<Value *> operands) : Value(tag), operands(operands), NumOperands(operands.size()) {
-        //
-    }
+    User(Tag tag) : Value(tag), NumOperands(0) {}
+    User(Tag tag, std::vector<Value *> operands) : Value(tag), operands(std::move(operands)), NumOperands(this->operands.size()) {}
+    
     Value *getOperand(unsigned i);
     void setOperand(unsigned i, Value *v);
     void addOperand(Value *v);
-    virtual ~User() = default;
+    virtual ~User();
 };
 
 struct Use {
@@ -47,11 +48,12 @@ struct Use {
     User *user;
     int index;
 
-    Use() : value(nullptr), user(nullptr) {}
+    Use() : value(nullptr), user(nullptr), index(-1) {}
     Use(Value *v, User *u, int index) : value(v), user(u), index(index) {
         if (v) v->addUse(this);
-        u->addOperand(u);
+        if (u) u->operands.push_back(v);
     }
+
     void setValue(Value *v) {
         if (value) value->removeUse(this);
         value = v;
@@ -64,37 +66,44 @@ struct Use {
 };
 
 void Value::replaceAllUseWith(Value *v) {
-    for (auto u : uses) {
+    for (auto* u : uses) {
         u->setValue(v);
     }
 }
+
 Value *User::getOperand(unsigned i) {
+    assert(i < NumOperands);
     return operands[i];
 }
 
 void User::setOperand(unsigned i, Value *v) {
-    // assert i < NumOperands && i >= 0;
-    //从原Value中删去这条use
-    for (auto u : operands[i]->uses) {
-        if (u->user == this) {
-            operands[i]->removeUse(u);
-        }
+    assert(i < NumOperands);
+    Value *oldValue = operands[i];
+    if (oldValue) {
+        oldValue->removeUse(new Use(oldValue, this, i));
     }
     operands[i] = v;
-    v->addUse(new Use(v, this, i));
+    if (v) {
+        v->addUse(new Use(v, this, i));
+    }
 }
 
 void User::addOperand(Value *v) {
     operands.push_back(v);
-    v->addUse(new Use(v, this, operands.size() - 1));
+    if (v) {
+        v->addUse(new Use(v, this, operands.size() - 1));
+    }
+    NumOperands++;
 }
+//FIXME:
+User::~User() = default;
 
 struct BasicBlock;
 
 struct Function : User {
     bool isBuiltin;
+    std::string name;
     std::list<BasicBlock*> basicBlocks;
-    // caller, callee
     std::list<Function*> caller;
     std::list<Function*> callee;
     Function() : User(Tag::Undef), isBuiltin(false) {}
@@ -109,6 +118,22 @@ struct Instruction : User {
 
 struct BinaryInstruction : Instruction {
     BinaryInstruction(Tag tag) : Instruction(tag) {}
+    constexpr static const char *LLVM_OPS[14] = {
+      /* Add = */ "add",
+      /* Sub = */ "sub",
+      /* Rsb = */ nullptr,
+      /* Mul = */ "mul",
+      /* Div = */ "sdiv",
+      /* Mod = */ "srem",
+      /* Lt = */ "icmp slt",
+      /* Le = */ "icmp sle",
+      /* Ge = */ "icmp sge",
+      /* Gt = */ "icmp sgt",
+      /* Eq = */ "icmp eq",
+      /* Ne = */ "icmp ne",
+      /* And = */ "and",
+      /* Or = */ "or",
+    };
 };
 
 struct BranchInstruction : Instruction {
@@ -136,7 +161,9 @@ struct BasicBlock : Value {
 };
 
 struct Constant : User {
+    int value;
     Constant() : User(Tag::Const) {}
+    Constant(int value) : User(Tag::Const), value(value) {}
 };
 
 struct GlobalValue : User {
