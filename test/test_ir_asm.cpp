@@ -12,9 +12,9 @@ int main() {
 
   auto *op1 = new ConstantValue{24};
   auto *op2 = new ConstantValue{99};
-  auto *sum = entryBB->create<BinaryInst>(Value::Add, op1, op2);
+  auto *sum = entryBB->create<BinaryInst>(Value::Tag::Add, op1, op2);
   auto *isEqual123 =
-      entryBB->create<BinaryInst>(Value::Eq, sum, new ConstantValue(123));
+      entryBB->create<BinaryInst>(Value::Tag::Eq, sum, new ConstantValue(123));
 
   auto *retInst = entryBB->create<ReturnInst>(isEqual123);
 
@@ -50,6 +50,17 @@ int main() {
   // 全部替换为 op1
   sum->replaceAllUseWith(op1);
   printInfo();
+
+  // 测试 classof
+  assert(isa<BinaryInst>(isEqual123));
+  assert(isa<BinaryInst>((Value *)isEqual123));
+  assert(!isa<BinaryInst>((Value *)retInst));
+  assert(!isa<Instruction>((Value *)op1));
+  assert(isa<Instruction>((Value *)isEqual123));
+  assert(isa<Instruction>((Value *)retInst));
+  assert(isa<Instruction>((Value *)sum));
+  assert(isa<User>((Value *)retInst));
+  assert(!isa<User>((Value *)op1));
 
   // mainFunc->print();
 

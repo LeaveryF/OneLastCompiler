@@ -16,11 +16,24 @@ namespace olc {
 struct Use;
 struct User;
 struct ConstantValue;
+struct ConstantArray;
 struct Function;
 struct Instruction;
 
 struct Value {
-  enum Tag {
+  enum class Tag {
+    // constant
+    ConstValue,
+    ConstArray,
+    Global,
+    Function,
+
+    // misc
+    Undef,
+    Param,
+    BasicBlock,
+
+    // instructions
     Add,
     Sub,
     Mul,
@@ -46,15 +59,16 @@ struct Value {
     Phi,
     MemOp,
     MemPhi,
-    Const,
-    Global,
-    Param,
-    FunctionVal,
-    BasicBlockVal,
-    Undef
+
+    // anchors
+    BeginConst = ConstValue,
+    EndConst = Global,
+    BeginInst = Add,
+    EndInst = MemPhi,
+    BeginBinOp = Add,
+    EndBinOp = Or,
   } tag;
   Value(Tag tag) : tag(tag) {}
-  virtual ~Value() = default;
 
   std::list<Use> uses;
 
@@ -104,7 +118,7 @@ struct BasicBlock : Value {
   std::list<BasicBlock *> predecessors;
   std::list<BasicBlock *> successors;
 
-  BasicBlock(Function *parent) : Value(Tag::BasicBlockVal), parent(parent) {}
+  BasicBlock(Function *parent) : Value(Tag::BasicBlock), parent(parent) {}
 
   template <typename InstT, typename... Args> InstT *create(Args &&...args) {
     auto *inst = new InstT(this, std::forward<Args>(args)...);
@@ -118,7 +132,7 @@ struct Argument : Value {
 
   Argument(std::string const &argName) : Value(Tag::Param), argName(argName) {}
 
-  static bool classof(const Value *V) { return V->tag == Value::Param; }
+  static bool classof(const Value *V) { return V->tag == Tag::Param; }
 };
 
 struct Function : User {
@@ -127,11 +141,11 @@ struct Function : User {
   std::list<Argument *> args;
   std::list<BasicBlock *> basicBlocks;
 
-  Function(std::string const &fnName) : User(Tag::FunctionVal), fnName(fnName) {
+  Function(std::string const &fnName) : User(Tag::Function), fnName(fnName) {
     basicBlocks.push_back(new BasicBlock(this));
   }
 
-  static bool classof(const Value *V) { return V->tag == Value::FunctionVal; }
+  static bool classof(const Value *V) { return V->tag == Tag::Function; }
 
   BasicBlock *getEntryBlock() { return basicBlocks.front(); }
 };
@@ -140,6 +154,10 @@ struct Instruction : User {
   BasicBlock *parent;
   Instruction(BasicBlock *bb, Tag tag, std::vector<Value *> operands)
       : User(tag, std::move(operands)), parent(bb) {}
+
+  static bool classof(const Value *V) {
+    return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
+  }
 };
 
 struct BinaryInst : Instruction {
@@ -147,60 +165,71 @@ struct BinaryInst : Instruction {
       : Instruction(bb, tag, {lhs, rhs}) {
     assert(tag >= Tag::Add && tag <= Tag::Or);
   }
-  constexpr static const char *LLVM_OPS[14] = {
-      /* Add = */ "add",
-      /* Sub = */ "sub",
-      /* Mul = */ "mul",
-      /* Div = */ "sdiv",
-      /* Mod = */ "srem",
-      /* Lt = */ "icmp slt",
-      /* Le = */ "icmp sle",
-      /* Ge = */ "icmp sge",
-      /* Gt = */ "icmp sgt",
-      /* Eq = */ "icmp eq",
-      /* Ne = */ "icmp ne",
-      /* And = */ "and",
-      /* Or = */ "or",
-  };
+
+  static bool classof(const Value *V) {
+    return V->tag >= Tag::BeginBinOp && V->tag <= Tag::EndBinOp;
+  }
 };
 
 struct BranchInst : Instruction {
   BranchInst(
       BasicBlock *bb, Value *cond, BasicBlock *ifTrue, BasicBlock *ifFalse)
       : Instruction(bb, Tag::Branch, {cond, ifTrue, ifFalse}) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Branch; }
 };
 
 struct JumpInst : Instruction {
   JumpInst(BasicBlock *bb, BasicBlock *target)
       : Instruction(bb, Tag::Jump, {target}) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Jump; }
 };
 
 struct ReturnInst : Instruction {
   ReturnInst(BasicBlock *bb, Value *val)
       : Instruction(bb, Tag::Return, {val}) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Return; }
 };
 
 struct Constant : Value {
   // just a base class, no actual features
   Constant(Value::Tag tag) : Value(tag) {}
 
-  static bool classof(const Value *V) { return isa<ConstantValue>(V); }
+  static bool classof(const Value *V) {
+    return V->tag >= Tag::BeginConst && V->tag <= Tag::EndConst;
+  }
 };
 
 struct ConstantValue : Constant {
   std::variant<int, float> value;
 
   ConstantValue(std::variant<int, float> value)
-      : Constant(Tag::Const), value(value) {}
+      : Constant(Tag::ConstValue), value(value) {}
 
   bool isInt() const { return value.index() == 0; }
   bool isFloat() const { return value.index() == 1; }
   int getInt() const { return std::get<int>(value); }
   float getFloat() const { return std::get<float>(value); }
+
+  static bool classof(const Value *V) { return V->tag == Tag::ConstValue; }
 };
 
+struct ConstantArray : Constant {
+  std::vector<ConstantValue *> values;
+
+  ConstantArray(std::vector<ConstantValue *> values)
+      : Constant(Tag::ConstArray), values(std::move(values)) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
+};
+
+// TODO: model globals
 struct GlobalValue : User {
   GlobalValue() : User(Tag::Global) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Global; }
 };
 
 } // namespace olc

@@ -36,18 +36,22 @@ template <typename T, typename F> bool isa(const F *f) {
 }
 
 template <typename T, typename F> T *cast(F *f) {
+  assert(isa<T>(f) && "cast<T>() argument of incompatible type!");
   return CastInfo<T, F>::doCast(f);
 }
 
 template <typename T, typename F> const T *cast(const F *f) {
+  assert(isa<T>(f) && "cast<T>() argument of incompatible type!");
   return CastInfo<T, F>::doCast(f);
 }
 
 template <typename T, typename F> T *dyn_cast(F *f) {
+  assert(f && "dyn_cast<T>() argument must be non-null!");
   return isa<T>(f) ? cast<T>(f) : nullptr;
 }
 
 template <typename T, typename F> const T *dyn_cast(const F *f) {
+  assert(f && "dyn_cast<T>() argument must be non-null!");
   return isa<T>(f) ? cast<T>(f) : nullptr;
 }
 
