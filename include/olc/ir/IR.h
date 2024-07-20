@@ -5,17 +5,24 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
+
+#include <olc/Support.h>
+
+namespace olc {
 
 // 前向声明
 struct Use;
 struct User;
+struct ConstantValue;
+struct Function;
+struct Instruction;
 
 struct Value {
   enum Tag {
     Add,
     Sub,
-    Rsb,
     Mul,
     Div,
     Mod,
@@ -27,6 +34,7 @@ struct Value {
     Ne,
     And,
     Or,
+    Rsb,
     Branch,
     Jump,
     Return,
@@ -41,88 +49,99 @@ struct Value {
     Const,
     Global,
     Param,
+    FunctionVal,
+    BasicBlockVal,
     Undef
   } tag;
   Value(Tag tag) : tag(tag) {}
   virtual ~Value() = default;
 
-  std::string name;
-  std::list<Use *> uses;
+  std::list<Use> uses;
 
-  void addUse(Use *u) { uses.push_back(u); }
+  void addUse(Use const &u) { uses.push_back(u); }
 
-  void removeUse(Use *u) { uses.remove(u); }
+  void removeUse(Use const &u);
 
   void replaceAllUseWith(Value *v);
 };
 
 struct User : public Value {
   std::vector<Value *> operands;
-  unsigned NumOperands;
 
-  User(Tag tag) : Value(tag), NumOperands(0) {}
-  User(Tag tag, std::vector<Value *> operands)
-      : Value(tag), operands(std::move(operands)),
-        NumOperands(this->operands.size()) {}
+  User(Tag tag, std::vector<Value *> operands = {})
+      : Value(tag), operands(std::move(operands)) {}
 
-  Value *getOperand(unsigned i);
+  static bool classof(const Value *V) { return isa<Instruction>(V); }
+
+  Value *getOperand(unsigned i) const;
   void setOperand(unsigned i, Value *v);
   void addOperand(Value *v);
-  virtual ~User();
+  size_t getNumOperands() const { return operands.size(); }
 };
 
 struct Use {
-  Value *value;
   User *user;
   int index;
 
-  Use() : value(nullptr), user(nullptr), index(-1) {}
-  Use(Value *v, User *u, int index) : value(v), user(u), index(index) {
-    if (v)
-      v->addUse(this);
-    if (u)
-      u->operands.push_back(v);
-  }
-
-  void setValue(Value *v) {
-    if (value)
-      value->removeUse(this);
-    value = v;
-    if (v)
-      v->addUse(this);
-  }
-
-  ~Use() {
-    if (value)
-      value->removeUse(this);
+  Use(User *u, int index) : user(u), index(index) {}
+  bool operator==(Use const &rhs) const {
+    return user == rhs.user && index == rhs.index;
   }
 };
 
-struct BasicBlock;
+struct BasicBlock : Value {
+  Function *parent;
+  std::list<Instruction *> instructions;
+  // TODO: maintain pred succ states
+  std::list<BasicBlock *> predecessors;
+  std::list<BasicBlock *> successors;
+
+  BasicBlock(Function *parent) : Value(Tag::BasicBlockVal), parent(parent) {}
+
+  template <typename InstT, typename... Args> InstT *create(Args &&...args) {
+    auto *inst = new InstT(this, std::forward<Args>(args)...);
+    instructions.push_back(inst);
+    return inst;
+  }
+};
+
+struct Argument : Value {
+  std::string argName;
+
+  Argument(std::string const &argName) : Value(Tag::Param), argName(argName) {}
+
+  static bool classof(const Value *V) { return V->tag == Value::Param; }
+};
 
 struct Function : User {
   bool isBuiltin;
-  std::string name;
+  std::string fnName;
+  std::list<Argument *> args;
   std::list<BasicBlock *> basicBlocks;
-  std::list<Function *> caller;
-  std::list<Function *> callee;
-  Function() : User(Tag::Undef), isBuiltin(false) {}
+
+  Function(std::string const &fnName) : User(Tag::FunctionVal), fnName(fnName) {
+    basicBlocks.push_back(new BasicBlock(this));
+  }
+
+  static bool classof(const Value *V) { return V->tag == Value::FunctionVal; }
+
+  BasicBlock *getEntryBlock() { return basicBlocks.front(); }
 };
 
 struct Instruction : User {
   BasicBlock *parent;
-  Instruction *prev;
-  Instruction *next;
-  Instruction(Tag tag)
-      : User(tag), parent(nullptr), prev(nullptr), next(nullptr) {}
+  Instruction(Tag tag, BasicBlock *bb, std::vector<Value *> operands)
+      : User(tag, std::move(operands)), parent(bb) {}
 };
 
-struct BinaryInstruction : Instruction {
-  BinaryInstruction(Tag tag) : Instruction(tag) {}
+struct BinaryInst : Instruction {
+  BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
+      : Instruction(tag, bb, {lhs, rhs}) {
+    assert(tag >= Tag::Add && tag <= Tag::Or);
+  }
   constexpr static const char *LLVM_OPS[14] = {
       /* Add = */ "add",
       /* Sub = */ "sub",
-      /* Rsb = */ nullptr,
       /* Mul = */ "mul",
       /* Div = */ "sdiv",
       /* Mod = */ "srem",
@@ -137,37 +156,43 @@ struct BinaryInstruction : Instruction {
   };
 };
 
-struct BranchInstruction : Instruction {
-  Use cond;
-  BasicBlock *ifTrue;
-  BasicBlock *ifFalse;
-  BranchInstruction()
-      : Instruction(Tag::Branch), cond(), ifTrue(nullptr), ifFalse(nullptr) {}
+struct BranchInst : Instruction {
+  BranchInst(
+      BasicBlock *bb, Value *cond, BasicBlock *ifTrue, BasicBlock *ifFalse)
+      : Instruction(Tag::Branch, bb, {cond, ifTrue, ifFalse}) {}
 };
 
-struct JumpInstruction : Instruction {
-  BasicBlock *target;
-  JumpInstruction() : Instruction(Tag::Jump), target(nullptr) {}
+struct JumpInst : Instruction {
+  JumpInst(BasicBlock *bb, BasicBlock *target)
+      : Instruction(Tag::Jump, bb, {target}) {}
 };
 
-struct ReturnInstruction : Instruction {
-  Use ret;
-  ReturnInstruction() : Instruction(Tag::Return), ret() {}
+struct ReturnInst : Instruction {
+  ReturnInst(BasicBlock *bb, Value *val)
+      : Instruction(Tag::Return, bb, {val}) {}
 };
 
-struct BasicBlock : Value {
-  std::list<Instruction *> instructions;
-  std::list<BasicBlock *> predecessors;
-  std::list<BasicBlock *> successors;
-  BasicBlock() : Value(Tag::Undef) {}
+struct Constant : Value {
+  // just a base class, no actual features
+  Constant(Value::Tag tag) : Value(tag) {}
+
+  static bool classof(const Value *V) { return isa<ConstantValue>(V); }
 };
 
-struct Constant : User {
-  int value;
-  Constant() : User(Tag::Const) {}
-  Constant(int value) : User(Tag::Const), value(value) {}
+struct ConstantValue : Constant {
+  std::variant<int, float> value;
+
+  ConstantValue(std::variant<int, float> value)
+      : Constant(Tag::Const), value(value) {}
+
+  bool isInt() const { return value.index() == 0; }
+  bool isFloat() const { return value.index() == 1; }
+  int getInt() const { return std::get<int>(value); }
+  float getFloat() const { return std::get<float>(value); }
 };
 
 struct GlobalValue : User {
   GlobalValue() : User(Tag::Global) {}
 };
+
+} // namespace olc
