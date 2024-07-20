@@ -232,6 +232,11 @@ struct ConstantValue : Constant {
 struct ConstantArray : Constant {
   std::vector<ConstantValue *> values;
 
+  template <typename... Args>
+  ConstantArray(Args &&...args)
+      : ConstantArray(
+            std::vector<ConstantValue *>{new ConstantValue(args)...}) {}
+
   ConstantArray(std::vector<ConstantValue *> values)
       : Constant(Tag::ConstArray), values(std::move(values)) {}
 
