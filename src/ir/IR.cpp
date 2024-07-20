@@ -2,14 +2,20 @@
 
 namespace olc {
 
-void Value::removeUse(Use const &u) {
+void Value::addUse(User *user, int index) { uses.push_back(Use(user, index)); }
+
+void Value::removeUse(User *user, int index) {
+  auto u = Use(user, index);
   uses.remove_if([=](Use const &use) { return use == u; });
 }
 
 void Value::replaceAllUseWith(Value *v) {
   for (auto u : uses) {
-    u.user->setOperand(u.index, v);
+    // delay the remove to avoid invalidation of iterator
+    u.user->setOperandWithoutRemoveUse(u.index, v);
   }
+  // clear uses now
+  uses.clear();
 }
 
 Value *User::getOperand(unsigned i) const {
@@ -19,21 +25,24 @@ Value *User::getOperand(unsigned i) const {
 
 void User::setOperand(unsigned i, Value *v) {
   assert(i < getNumOperands());
-  Value *oldValue = operands[i];
-  if (oldValue) {
-    oldValue->removeUse(Use(this, i));
-  }
+  if (Value *oldValue = operands[i])
+    oldValue->removeUse(this, i);
+
+  setOperandWithoutRemoveUse(i, v);
+}
+
+void User::setOperandWithoutRemoveUse(unsigned i, Value *v) {
+  assert(i < getNumOperands());
   operands[i] = v;
-  if (v) {
-    v->addUse(Use(this, i));
-  }
+  if (v)
+    v->addUse(this, i);
 }
 
 void User::addOperand(Value *v) {
-  auto new_idx = operands.size();
+  auto newIndex = operands.size();
   operands.push_back(v);
   if (v) {
-    v->addUse(Use(this, new_idx));
+    v->addUse(this, newIndex);
   }
 }
 

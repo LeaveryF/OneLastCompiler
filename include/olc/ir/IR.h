@@ -58,9 +58,9 @@ struct Value {
 
   std::list<Use> uses;
 
-  void addUse(Use const &u) { uses.push_back(u); }
+  void addUse(User *user, int index);
 
-  void removeUse(Use const &u);
+  void removeUse(User *user, int index);
 
   void replaceAllUseWith(Value *v);
 };
@@ -69,7 +69,11 @@ struct User : public Value {
   std::vector<Value *> operands;
 
   User(Tag tag, std::vector<Value *> operands = {})
-      : Value(tag), operands(std::move(operands)) {}
+      : Value(tag), operands(std::move(operands)) {
+    for (auto i = 0u; i < this->operands.size(); ++i)
+      if (auto &operand = this->operands[i])
+        operand->addUse(this, i);
+  }
 
   static bool classof(const Value *V) { return isa<Instruction>(V); }
 
@@ -77,6 +81,10 @@ struct User : public Value {
   void setOperand(unsigned i, Value *v);
   void addOperand(Value *v);
   size_t getNumOperands() const { return operands.size(); }
+
+private:
+  void setOperandWithoutRemoveUse(unsigned i, Value *v);
+  friend struct Value;
 };
 
 struct Use {
@@ -130,13 +138,13 @@ struct Function : User {
 
 struct Instruction : User {
   BasicBlock *parent;
-  Instruction(Tag tag, BasicBlock *bb, std::vector<Value *> operands)
+  Instruction(BasicBlock *bb, Tag tag, std::vector<Value *> operands)
       : User(tag, std::move(operands)), parent(bb) {}
 };
 
 struct BinaryInst : Instruction {
   BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
-      : Instruction(tag, bb, {lhs, rhs}) {
+      : Instruction(bb, tag, {lhs, rhs}) {
     assert(tag >= Tag::Add && tag <= Tag::Or);
   }
   constexpr static const char *LLVM_OPS[14] = {
@@ -159,17 +167,17 @@ struct BinaryInst : Instruction {
 struct BranchInst : Instruction {
   BranchInst(
       BasicBlock *bb, Value *cond, BasicBlock *ifTrue, BasicBlock *ifFalse)
-      : Instruction(Tag::Branch, bb, {cond, ifTrue, ifFalse}) {}
+      : Instruction(bb, Tag::Branch, {cond, ifTrue, ifFalse}) {}
 };
 
 struct JumpInst : Instruction {
   JumpInst(BasicBlock *bb, BasicBlock *target)
-      : Instruction(Tag::Jump, bb, {target}) {}
+      : Instruction(bb, Tag::Jump, {target}) {}
 };
 
 struct ReturnInst : Instruction {
   ReturnInst(BasicBlock *bb, Value *val)
-      : Instruction(Tag::Return, bb, {val}) {}
+      : Instruction(bb, Tag::Return, {val}) {}
 };
 
 struct Constant : Value {
