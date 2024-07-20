@@ -113,12 +113,16 @@ struct Use {
 
 struct BasicBlock : Value {
   Function *parent;
+  std::string label;
   std::list<Instruction *> instructions;
   // TODO: maintain pred succ states
   std::list<BasicBlock *> predecessors;
   std::list<BasicBlock *> successors;
 
-  BasicBlock(Function *parent) : Value(Tag::BasicBlock), parent(parent) {}
+  BasicBlock(Function *parent, std::string const &label)
+      : Value(Tag::BasicBlock), parent(parent), label(label) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::BasicBlock; }
 
   template <typename InstT, typename... Args> InstT *create(Args &&...args) {
     auto *inst = new InstT(this, std::forward<Args>(args)...);
@@ -142,7 +146,7 @@ struct Function : User {
   std::list<BasicBlock *> basicBlocks;
 
   Function(std::string const &fnName) : User(Tag::Function), fnName(fnName) {
-    basicBlocks.push_back(new BasicBlock(this));
+    basicBlocks.push_back(new BasicBlock(this, "entry"));
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::Function; }
@@ -197,6 +201,8 @@ struct Constant : Value {
   // just a base class, no actual features
   Constant(Value::Tag tag) : Value(tag) {}
 
+  virtual void print(std::ostream &os) const = 0;
+
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginConst && V->tag <= Tag::EndConst;
   }
@@ -213,6 +219,13 @@ struct ConstantValue : Constant {
   int getInt() const { return std::get<int>(value); }
   float getFloat() const { return std::get<float>(value); }
 
+  void print(std::ostream &os) const override {
+    if (isInt())
+      os << "i32 " << getInt();
+    else
+      os << "f32 " << getFloat();
+  }
+
   static bool classof(const Value *V) { return V->tag == Tag::ConstValue; }
 };
 
@@ -222,6 +235,15 @@ struct ConstantArray : Constant {
   ConstantArray(std::vector<ConstantValue *> values)
       : Constant(Tag::ConstArray), values(std::move(values)) {}
 
+  void print(std::ostream &os) const override {
+    os << "[ ";
+    for (auto &val : values) {
+      val->print(os);
+      os << " ";
+    }
+    os << "]";
+  }
+
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
@@ -230,6 +252,13 @@ struct GlobalValue : User {
   GlobalValue() : User(Tag::Global) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Global; }
+};
+
+struct Module {
+  std::list<Function *> functions;
+  std::list<GlobalValue *> globals;
+
+  void addFunction(Function *fn) { functions.push_back(fn); }
 };
 
 } // namespace olc

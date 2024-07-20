@@ -66,7 +66,7 @@ add_custom_command(TARGET main
                    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # test targets
-
-add_executable(test_ir_asm test/test_ir_asm.cpp src/ir/IR.cpp)
+file(GLOB_RECURSE LIBIR_SOURCES "src/ir/*.cpp")
+add_executable(test_ir_asm test/test_ir_asm.cpp ${LIBIR_SOURCES})
 target_include_directories(test_ir_asm PRIVATE include/ antlr/)
 target_link_libraries(test_ir_asm antlr4_shared)

@@ -1,12 +1,15 @@
 #include <iostream>
 
+#include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
 
 int main() {
   using namespace olc;
 
-  // 创建一个 Function 对象
+  AssemblyWriter asmWriter{std::cout};
+  auto *mod = new Module{};
   Function *mainFunc = new Function{"main"};
+  mod->addFunction(mainFunc);
 
   BasicBlock *entryBB = mainFunc->getEntryBlock();
 
@@ -17,6 +20,8 @@ int main() {
       entryBB->create<BinaryInst>(Value::Tag::Eq, sum, new ConstantValue(123));
 
   auto *retInst = entryBB->create<ReturnInst>(isEqual123);
+
+  asmWriter.printModule(mod);
 
   // 打印指针：
   std::cout << "op1: " << op1 << std::endl;
@@ -50,6 +55,8 @@ int main() {
   // 全部替换为 op1
   sum->replaceAllUseWith(op1);
   printInfo();
+
+  asmWriter.printModule(mod);
 
   // 测试 classof
   assert(isa<BinaryInst>(isEqual123));

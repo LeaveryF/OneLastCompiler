@@ -1,0 +1,69 @@
+#include <olc/ir/AsmWriter.h>
+
+#include <map>
+
+namespace olc {
+
+void AssemblyWriter::printModule(Module *module) {
+  for (auto &func : module->functions) {
+    printFunc(func);
+    os << "\n";
+  }
+}
+
+void AssemblyWriter::printFunc(Function *function) {
+  nameManager.reset();
+
+  os << "define @" << function->fnName << " {\n";
+  if (function->isBuiltin)
+    olc_unreachable("NYI");
+  for (auto &bb : function->basicBlocks) {
+    printBasicBlock(bb);
+  }
+  os << "}\n";
+}
+
+void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
+  os << basicBlock->label << ":\n";
+  // TODO: print pred and succ
+
+  for (auto &instr : basicBlock->instructions) {
+    nameManager.add(instr);
+    printInstr(instr);
+  }
+}
+
+constexpr char const *kInstTagToOpName[] = {
+    "add", "sub", "mul",  "div",    "mod", "lt",    "le",    "ge",  "gt",
+    "eq",  "ne",  "and",  "or",     "rsb", "br",    "jmp",   "ret", "gep",
+    "ld",  "st",  "call", "alloca", "phi", "memop", "memphi"};
+
+void AssemblyWriter::printInstr(Instruction *instruction) {
+  auto *opName = kInstTagToOpName
+      [static_cast<int>(instruction->tag) -
+       static_cast<int>(Value::Tag::BeginInst)];
+
+  // indent for instructions
+  os << "  ";
+  os << "%" << nameManager[instruction] << " = ";
+
+  os << opName;
+  for (unsigned i = 0; i < instruction->getNumOperands(); i++) {
+    auto &op = instruction->operands[i];
+    if (i > 0)
+      os << ",";
+    os << " ";
+    if (auto *constVal = dyn_cast<Constant>(op)) {
+      constVal->print(os);
+    } else if (auto *instr = dyn_cast<Instruction>(op)) {
+      os << "%" << nameManager[instr];
+    } else if (auto *bb = dyn_cast<BasicBlock>(op)) {
+      os << "label %" << bb->label;
+    } else {
+      olc_unreachable("NYI");
+    }
+  }
+
+  os << "\n";
+}
+} // namespace olc
