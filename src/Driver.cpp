@@ -7,11 +7,12 @@
 #include <fstream>
 #include <iostream>
 
-#include "antlr4-runtime.h"
-#include "frontend/IRVisitor.h"
-#include "sysy2022Lexer.h"
-#include "sysy2022Parser.h"
-#include "sysy2022Visitor.h"
+#include <antlr4-runtime.h>
+#include <sysy2022Lexer.h>
+#include <sysy2022Parser.h>
+#include <sysy2022Visitor.h>
+
+#include <olc/frontend/Visitor.h>
 
 using namespace antlr4;
 
@@ -34,7 +35,7 @@ int main(int argc, const char *argv[]) {
   // std::cout << "Parse Tree: " << s << std::endl;
 
   sysy2022Parser::CompUnitContext *tree = parser.compUnit();
-  IRVisitor visitor;
+  DebugASTVisitor visitor;
   visitor.visitCompUnit(tree);
 
   return 0;
