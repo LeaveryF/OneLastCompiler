@@ -6,7 +6,8 @@
 #include <antlr4-runtime.h>
 #include <sysy2022BaseVisitor.h>
 
-class IRVisitor : public sysy2022BaseVisitor {
+// TODO: replace this class with your visitor
+class DebugASTVisitor : public sysy2022BaseVisitor {
 public:
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
