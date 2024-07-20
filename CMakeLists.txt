@@ -64,3 +64,9 @@ add_custom_command(TARGET main
                    COMMAND ${CMAKE_COMMAND}
                            -E copy ${ANTLR4_RUNTIME_LIBRARIES} .
                    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# test targets
+
+add_executable(test_ir_asm test/test_ir_asm.cpp src/ir/IR.cpp)
+target_include_directories(test_ir_asm PRIVATE include/ antlr/)
+target_link_libraries(test_ir_asm antlr4_shared)
