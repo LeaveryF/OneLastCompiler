@@ -72,7 +72,6 @@ target_include_directories(test_ir_asm PRIVATE include/ antlr/)
 target_link_libraries(test_ir_asm antlr4_shared)
 
 # test targets
-file(GLOB_RECURSE LIB_SYMTAB_SOURCES "src/utils/symtab.cpp")
 add_executable(test_symtab test/test_symtab.cpp ${LIB_SYMTAB_SOURCES})
 target_include_directories(test_symtab PRIVATE include/ antlr/)
 target_link_libraries(test_symtab antlr4_shared)
