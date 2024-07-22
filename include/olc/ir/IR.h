@@ -59,6 +59,8 @@ struct Value {
     Phi,
     MemOp,
     MemPhi,
+    IntToFloat,   // 新增
+    FloatToInt,   // 新增
 
     // anchors
     BeginConst = ConstValue,
@@ -153,6 +155,12 @@ struct Function : User {
   static bool classof(const Value *V) { return V->tag == Tag::Function; }
 
   BasicBlock *getEntryBlock() { return basicBlocks.front(); }
+
+  void addArgument(Argument *arg) { args.push_back(arg); }
+  void addBasicBlock(BasicBlock *bb) { basicBlocks.push_back(bb); }
+
+  const std::list<Argument *> &getArguments() const { return args; }
+  const std::list<BasicBlock *> &getBasicBlocks() const { return basicBlocks; }
 };
 
 struct Instruction : User {
@@ -197,6 +205,71 @@ struct ReturnInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
 };
+
+struct MemInst: Instruction {
+  bool isInt;
+  MemInst(BasicBlock *bb, Tag tag, std::vector<Value *> operands, bool isInt)
+      : Instruction(bb, tag, operands), isInt(isInt) {}
+};
+
+struct AllocaInst : MemInst {
+  AllocaInst(BasicBlock *bb, bool isInt)
+      : MemInst(bb, Tag::Alloca, {}, isInt) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
+};
+
+
+struct StoreInst : MemInst {
+  StoreInst(BasicBlock *bb, Value *val, Value *ptr, bool isInt)
+      : MemInst(bb, Tag::Store, {val, ptr}, isInt) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Store; }
+
+  Value* getValue() const { return getOperand(0); }
+  Value* getPointer() const { return getOperand(1); }
+};
+
+
+struct LoadInst : MemInst {
+  LoadInst(BasicBlock *bb, Value *ptr, bool isInt)
+      : MemInst(bb, Tag::Load, {ptr}, isInt) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Load; }
+
+  Value* getPointer() const { return getOperand(0); }
+};
+
+
+struct GetElementPtrInst : Instruction {
+  GetElementPtrInst(BasicBlock *bb, Value *ptr, std::vector<Value *> indices)
+      : Instruction(bb, Tag::GetElementPtr, {ptr}) {
+    for (auto *index : indices) {
+      addOperand(index);
+    }
+  }
+
+  static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
+};
+
+struct IntToFloatInst : Instruction {
+  IntToFloatInst(BasicBlock *bb, Value *intVal)
+      : Instruction(bb, Tag::IntToFloat, {intVal}) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::IntToFloat; }
+
+  Value* getIntValue() const { return getOperand(0); }
+};
+
+struct FloatToIntInst : Instruction {
+  FloatToIntInst(BasicBlock *bb, Value *floatVal)
+      : Instruction(bb, Tag::FloatToInt, {floatVal}) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::FloatToInt; }
+
+  Value* getFloatValue() const { return getOperand(0); }
+};
+
 
 struct Constant : Value {
   // just a base class, no actual features
@@ -254,17 +327,41 @@ struct ConstantArray : Constant {
 };
 
 // TODO: model globals
-struct GlobalValue : User {
-  GlobalValue() : User(Tag::Global) {}
+struct GlobalVariable : User {
+    std::variant<int, float> initialValue;
+    bool isConstant;
 
-  static bool classof(const Value *V) { return V->tag == Tag::Global; }
+    GlobalVariable(std::string const &name, std::variant<int, float> initialValue, bool isConstant)
+        : User(Tag::Global), initialValue(initialValue), isConstant(isConstant), name(name) {}
+
+    static bool classof(const Value *V) { return V->tag == Tag::Global; }
+
+    std::string getName() const { return name; }
+    bool isInt() const { return initialValue.index() == 0; }
+    bool isFloat() const { return initialValue.index() == 1; }
+    int getInt() const { return std::get<int>(initialValue); }
+    float getFloat() const { return std::get<float>(initialValue); }
+
+private:
+    std::string name;
 };
+
 
 struct Module {
   std::list<Function *> functions;
-  std::list<GlobalValue *> globals;
+  std::list<GlobalVariable *> globals;
 
   void addFunction(Function *fn) { functions.push_back(fn); }
+  void addGlobal(GlobalVariable *gv) { globals.push_back(gv); }
+
+    GlobalVariable* getGlobal(const std::string& name) const {
+        for (auto* gv : globals) {
+            if (gv->getName() == name) {
+                return gv;
+            }
+        }
+        return nullptr; 
+    }
 };
 
 } // namespace olc
