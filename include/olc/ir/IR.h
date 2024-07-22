@@ -145,7 +145,8 @@ struct Function : User {
   std::list<Argument *> args;
   std::list<BasicBlock *> basicBlocks;
 
-  Function(std::string const &fnName) : User(Tag::Function), fnName(fnName) {
+  Function(std::string const &fnName)
+      : User(Tag::Function), fnName(fnName), isBuiltin(false) {
     basicBlocks.push_back(new BasicBlock(this, "entry"));
   }
 
