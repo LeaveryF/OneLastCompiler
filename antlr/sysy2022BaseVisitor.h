@@ -23,6 +23,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBasicType(sysy2022Parser::BasicTypeContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitConstDecl(sysy2022Parser::ConstDeclContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -51,6 +55,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitFuncType(sysy2022Parser::FuncTypeContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitFuncFParams(sysy2022Parser::FuncFParamsContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -67,7 +75,35 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitStmt(sysy2022Parser::StmtContext *ctx) override {
+  virtual std::any visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitExprStmt(sysy2022Parser::ExprStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBlockStmt(sysy2022Parser::BlockStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitWhileStmt(sysy2022Parser::WhileStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBreakStmt(sysy2022Parser::BreakStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitContinueStmt(sysy2022Parser::ContinueStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 

@@ -1,3 +1,6 @@
+ // $antlr-format off
+// $antlr-format reflowComments false
+
 grammar sysy2022;
 
 
@@ -6,6 +9,7 @@ grammar sysy2022;
 //===----------------------------------------------------------------------===//
 // 编译单元
 // ! 可以以任何顺序出现
+// ? 这样写是否合适
 // 语义约束：
 // 1. 一个sy程序有且仅有一个main函数 需要输出其返回值
 // 2. 顶层标识符不允许重名 -> 可以共用一个符号表
@@ -15,7 +19,14 @@ compUnit
 
 // 声明部分
 decl
-	: (constDecl | varDecl)
+	: constDecl
+	| varDecl
+	;
+
+// 基本类型
+basicType
+	: 'int'
+	| 'float'
 	;
 
 //===----------------------------------------------------------------------===//
@@ -23,7 +34,7 @@ decl
 //===----------------------------------------------------------------------===//
 // 常量声明
 constDecl
-	: 'const' ('int' | 'float') constDef (',' constDef)* ';'
+	: 'const' basicType constDef (',' constDef)* ';'
 	;
 
 // 常量定义
@@ -45,7 +56,7 @@ constInitVal
 // 1. 只要有初始化列表都会隐式初始化 全局变量隐式初始化
 // 2. 初始化列表元素类型与数组类型一致 变量或常量初值可以隐式转换
 varDecl
-	: ('int' | 'float') varDef (',' varDef)* ';'
+	: basicType varDef (',' varDef)* ';'
 	;
 
 // 变量定义
@@ -66,7 +77,13 @@ initVal
 // 语义约束：
 // 1. 保证返回值为void时 return语句不带返回值
 funcDef
-	: ('void' | 'int' | 'float') ID '(' funcFParams? ')' block
+	: funcType ID '(' funcFParams? ')' block
+	;
+
+funcType
+	: 'void'
+	| 'int'
+	| 'float'
 	;
 
 // 函数形参表
@@ -79,7 +96,7 @@ funcFParams
 // 1. 数组传地址
 // 2. 多维数组可以部分传递
 funcFParam
-	: ('int' | 'float') ID ('[' ']' ('[' expr* ']')*)?
+	: basicType ID ('[' ']' ('[' expr* ']')*)?
 	;
 
 // 语句块
@@ -95,14 +112,14 @@ blockItem
 
 // 语句
 stmt
-	: lVal '=' expr ';' 						// 赋值语句
-	| expr ';' 									// 表达式语句 // ! 表达式语句并没有任何实际作用
-	| block 									// 语句块
-	| 'if' '(' cond ')' stmt ('else' stmt)? 	// if语句 // ! 就近匹配
-	| 'while' '(' cond ')' stmt 				// while语句
-	| 'break' ';' 								// break语句
-	| 'continue' ';' 							// conitinue语句
-	| 'return' expr? ';' 						// return语句
+	: lVal '=' expr ';' 					#assignStmt		// 赋值语句
+	| expr ';' 								#exprStmt		// 表达式语句 // ! 表达式语句并没有任何实际作用
+	| block 								#blockStmt		// 语句块
+	| 'if' '(' cond ')' stmt ('else' stmt)? #ifStmt			// if语句 // ! 就近匹配
+	| 'while' '(' cond ')' stmt 			#whileStmt		// while语句
+	| 'break' ';' 							#breakStmt		// break语句
+	| 'continue' ';' 						#continueStmt	// conitinue语句
+	| 'return' expr? ';' 					#returnStmt		// return语句
 	;
 
 //===----------------------------------------------------------------------===//
@@ -119,6 +136,14 @@ stmt
 // 1. 关系表达式中可以出现算术表达式 非0为真 0为假 按照语法规则 算术表达式中并不会出现关系表达式 比如不会出现'!'
 // 2. 变量引用ID和数组变量引用ID[]称为"左值" 只有左值可以被赋值 只有左值可以出现在赋值语句左侧 语义约束保证是变量
 // 3. 和c语言不同 赋值表达式实际上是赋值语句 是一种语句而非表达式 故赋值语句没有"值"的属性
+
+// 表达式
+// expr
+// 	: expr ('+' | '-' | '*' | '/' | '%' | '==' | '!=' | '>' | '>=' | '<' | '<=' | '&&' | '||') expr
+// 	| primaryExpr
+// 	| unaryExpr
+// 	| ID '(' funcRParams? ')'
+// 	;
 
 // 表达式
 expr

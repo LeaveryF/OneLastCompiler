@@ -23,6 +23,8 @@ public:
 
     virtual std::any visitDecl(sysy2022Parser::DeclContext *context) = 0;
 
+    virtual std::any visitBasicType(sysy2022Parser::BasicTypeContext *context) = 0;
+
     virtual std::any visitConstDecl(sysy2022Parser::ConstDeclContext *context) = 0;
 
     virtual std::any visitConstDef(sysy2022Parser::ConstDefContext *context) = 0;
@@ -37,6 +39,8 @@ public:
 
     virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *context) = 0;
 
+    virtual std::any visitFuncType(sysy2022Parser::FuncTypeContext *context) = 0;
+
     virtual std::any visitFuncFParams(sysy2022Parser::FuncFParamsContext *context) = 0;
 
     virtual std::any visitFuncFParam(sysy2022Parser::FuncFParamContext *context) = 0;
@@ -45,7 +49,21 @@ public:
 
     virtual std::any visitBlockItem(sysy2022Parser::BlockItemContext *context) = 0;
 
-    virtual std::any visitStmt(sysy2022Parser::StmtContext *context) = 0;
+    virtual std::any visitAssignStmt(sysy2022Parser::AssignStmtContext *context) = 0;
+
+    virtual std::any visitExprStmt(sysy2022Parser::ExprStmtContext *context) = 0;
+
+    virtual std::any visitBlockStmt(sysy2022Parser::BlockStmtContext *context) = 0;
+
+    virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *context) = 0;
+
+    virtual std::any visitWhileStmt(sysy2022Parser::WhileStmtContext *context) = 0;
+
+    virtual std::any visitBreakStmt(sysy2022Parser::BreakStmtContext *context) = 0;
+
+    virtual std::any visitContinueStmt(sysy2022Parser::ContinueStmtContext *context) = 0;
+
+    virtual std::any visitReturnStmt(sysy2022Parser::ReturnStmtContext *context) = 0;
 
     virtual std::any visitExpr(sysy2022Parser::ExprContext *context) = 0;
 
