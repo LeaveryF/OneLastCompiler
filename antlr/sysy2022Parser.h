@@ -190,9 +190,9 @@ public:
     VarDefContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ID();
-    InitValContext *initVal();
     std::vector<ConstExprContext *> constExpr();
     ConstExprContext* constExpr(size_t i);
+    InitValContext *initVal();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

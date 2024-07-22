@@ -61,7 +61,7 @@ varDecl
 
 // 变量定义
 varDef
-	: ID ('[' constExpr ']')* '=' initVal
+	: ID ('[' constExpr ']')* ('=' initVal)?
 	;
 
 // 变量初值
