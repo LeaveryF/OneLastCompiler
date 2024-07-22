@@ -13,11 +13,16 @@
 #include <sysy2022Visitor.h>
 
 #include <olc/frontend/Visitor.h>
+#include <olc/ir/AsmWriter.h>
+#include <olc/ir/IR.h>
 
 using namespace antlr4;
+using namespace olc;
+
+Module *module = new Module{};
 
 int main(int argc, const char *argv[]) {
-  std::ifstream fin("../test/test.sy");
+  std::ifstream fin("../test/data/09_func_defn.sy");
   if (!fin) {
     std::cout << "File not found" << std::endl;
     return 1;
@@ -35,8 +40,13 @@ int main(int argc, const char *argv[]) {
   // std::cout << "Parse Tree: " << s << std::endl;
 
   sysy2022Parser::CompUnitContext *tree = parser.compUnit();
+
+  AssemblyWriter asmWriter{std::cout};
+
   DebugASTVisitor visitor;
   visitor.visitCompUnit(tree);
+
+  asmWriter.printModule(module);
 
   return 0;
 }
