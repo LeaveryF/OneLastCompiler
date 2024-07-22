@@ -13,7 +13,7 @@ antlr语法示例: https://github.com/antlr/grammars-v4
 antlr语法示例 - c: https://github.com/antlr/grammars-v4/blob/master/c/C.g4
 antlr语法示例 - c++: https://github.com/antlr/grammars-v4/tree/master/cpp
 
-antlr简明教程: https://wizardforcel.gitbooks.io/antlr4-short-course
+antlr简明教程: https://wizardforcel.gitbooks.io/antlr4-short-course/content/getting-started.html
 antlr教程: https://tomassetti.me/antlr-mega-tutorial/
 **antlr c++教程: https://tomassetti.me/getting-started-antlr-cpp/
 北航编译实验: https://buaa-se-compiling.github.io/miniSysY-tutorial/
