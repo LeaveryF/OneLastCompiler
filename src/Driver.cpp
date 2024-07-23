@@ -19,8 +19,6 @@
 using namespace antlr4;
 using namespace olc;
 
-Module *module = new Module{};
-
 int main(int argc, const char *argv[]) {
   std::ifstream fin("../test/data/09_func_defn.sy");
   if (!fin) {
@@ -43,10 +41,11 @@ int main(int argc, const char *argv[]) {
 
   AssemblyWriter asmWriter{std::cout};
 
-  CodeGenASTVisitor visitor;
+  auto *mod = new Module{};
+  CodeGenASTVisitor visitor{mod};
   visitor.visitCompUnit(tree);
 
-  asmWriter.printModule(module);
+  asmWriter.printModule(mod);
 
   return 0;
 }

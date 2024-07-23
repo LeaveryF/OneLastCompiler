@@ -30,6 +30,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
+  CodeGenASTVisitor(Module *module) : curModule(module) {}
+
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
     return visitChildren(ctx);
@@ -78,23 +80,18 @@ public:
 
     // 初始化函数
     auto *retType = convertType(ctx->funcType()->getText());
-    std::vector<Type *> argTypes;
     std::vector<Argument *> args;
 
     // 处理形参
     if (ctx->funcFParams() != nullptr) {
-      auto params =
-          std::any_cast<std::vector<Argument *>>(visit(ctx->funcFParams()));
       for (const auto &param : ctx->funcFParams()->funcFParam()) {
         auto *type = convertType(param->basicType()->getText());
-        argTypes.push_back(type);
         args.push_back(new Argument{type, param->ID()->getText()});
       }
     }
     // 加到module中
     // 函数名加到符号表中
-    auto *funcType = FunctionType::get(retType, argTypes);
-    Function *function = new Function(funcType, ctx->ID()->getText(), args);
+    Function *function = new Function(retType, ctx->ID()->getText(), args);
     valueMap.insert(ctx->ID()->getText(), function);
     curModule->addFunction(function);
 
