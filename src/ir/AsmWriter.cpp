@@ -27,8 +27,10 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
   os << basicBlock->label << ":\n";
   // TODO: print pred and succ
 
-  for (auto &instr : basicBlock->instructions) {
-    nameManager.add(instr);
+  for (auto *instr : basicBlock->instructions) {
+    assert(instr->getType() && "must have type");
+    if (!instr->getType()->isVoidTy())
+      nameManager.add(instr);
     printInstr(instr);
   }
 }
@@ -45,7 +47,8 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
 
   // indent for instructions
   os << "  ";
-  os << "%" << nameManager[instruction] << " = ";
+  if (!instruction->getType()->isVoidTy())
+    os << "%" << nameManager[instruction] << " = ";
 
   os << opName;
   for (unsigned i = 0; i < instruction->getNumOperands(); i++) {

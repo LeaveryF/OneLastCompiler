@@ -12,12 +12,23 @@
 
 using namespace olc;
 
-extern Module *module;
-utils::SymTab<std::string, std::string> *symtab =
-    new utils::SymTab<std::string, std::string>;
+class CodeGenASTVisitor : public sysy2022BaseVisitor {
+  utils::SymTab<std::string, Value *> valueMap;
+  utils::SymTab<std::string, Type *> typeMap;
+  Module *curModule;
 
-// TODO: replace this class with your visitor
-class DebugASTVisitor : public sysy2022BaseVisitor {
+  Type *convertType(std::string const &typeStr) {
+    if (typeStr == "int") {
+      return IntegerType::get();
+    } else if (typeStr == "float") {
+      return FloatType::get();
+    } else if (typeStr == "void") {
+      return VoidType::get();
+    }
+    olc_unreachable("NYI");
+    return nullptr;
+  }
+
 public:
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -61,56 +72,58 @@ public:
   }
 
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
-    // 函数名加到符号表中
-    symtab->insert(
-        ctx->ID()->getText(),
-        std::any_cast<std::string>(visit(ctx->funcType())));
     // 进入新的作用域
-    symtab->enterScope();
+    typeMap.enterScope();
+    valueMap.enterScope();
 
     // 初始化函数
-    Function *function = new Function(ctx->ID()->getText());
+    auto *retType = convertType(ctx->funcType()->getText());
+    std::vector<Type *> argTypes;
+    std::vector<Argument *> args;
+
     // 处理形参
     if (ctx->funcFParams() != nullptr) {
-      std::vector<std::pair<std::string, std::string>> params =
-          std::any_cast<std::vector<std::pair<std::string, std::string>>>(
-              visit(ctx->funcFParams()));
-      for (const auto &param : params) {
-        // 加到Function类中
-        function->args.push_back(new Argument(param.first));
-        // 加到符号表中
-        symtab->insert(param.first, param.second);
+      auto params =
+          std::any_cast<std::vector<Argument *>>(visit(ctx->funcFParams()));
+      for (const auto &param : ctx->funcFParams()->funcFParam()) {
+        auto *type = convertType(param->basicType()->getText());
+        argTypes.push_back(type);
+        args.push_back(new Argument{type, param->ID()->getText()});
       }
     }
     // 加到module中
-    module->addFunction(function);
+    // 函数名加到符号表中
+    auto *funcType = FunctionType::get(retType, argTypes);
+    Function *function = new Function(funcType, ctx->ID()->getText(), args);
+    valueMap.insert(ctx->ID()->getText(), function);
+    curModule->addFunction(function);
 
     // 处理函数体
     visit(ctx->block());
-    // 退出作用域
-    symtab->exitScope();
 
-    return 0;
+    // 退出作用域
+    valueMap.exitScope();
+    typeMap.exitScope();
+
+    return {};
   }
 
   virtual std::any
   visitFuncType(sysy2022Parser::FuncTypeContext *ctx) override {
-    return ctx->getText();
+    olc_unreachable("Never");
+    return {};
   }
 
   virtual std::any
   visitFuncFParams(sysy2022Parser::FuncFParamsContext *ctx) override {
-    std::vector<std::pair<std::string, std::string>> params;
-    for (int i = 0; i < ctx->funcFParam().size(); i++) {
-      params.push_back(std::any_cast<std::pair<std::string, std::string>>(
-          visit(ctx->funcFParam(i))));
-    }
-    return params;
+    olc_unreachable("Never");
+    return {};
   }
 
   virtual std::any
   visitFuncFParam(sysy2022Parser::FuncFParamContext *ctx) override {
-    return std::make_pair(ctx->ID()->getText(), ctx->basicType()->getText());
+    olc_unreachable("Never");
+    return {};
   }
 
   virtual std::any visitBlock(sysy2022Parser::BlockContext *ctx) override {

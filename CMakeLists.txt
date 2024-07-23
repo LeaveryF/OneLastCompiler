@@ -65,13 +65,15 @@ add_custom_command(TARGET main
                            -E copy ${ANTLR4_RUNTIME_LIBRARIES} .
                    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-# test targets
-file(GLOB_RECURSE LIB_IR_SOURCES "src/ir/*.cpp")
-add_executable(test_ir_asm test/test_ir_asm.cpp ${LIB_IR_SOURCES})
-target_include_directories(test_ir_asm PRIVATE include/ antlr/)
-target_link_libraries(test_ir_asm antlr4_shared)
+# Define a function to abstract the process of adding test targets
+function(add_olc_test_target target_name source_file)
+    file(GLOB_RECURSE LIB_IR_SOURCES "src/ir/*.cpp")
+    add_executable(${target_name} ${source_file} ${LIB_IR_SOURCES})
+    target_include_directories(${target_name} PRIVATE include/ antlr/)
+    target_link_libraries(${target_name} antlr4_shared)
+endfunction()
 
-# test targets
-add_executable(test_symtab test/test_symtab.cpp ${LIB_SYMTAB_SOURCES})
-target_include_directories(test_symtab PRIVATE include/ antlr/)
-target_link_libraries(test_symtab antlr4_shared)
+# Usage of the newly defined function
+add_olc_test_target(test_ir_asm test/test_ir_asm.cpp)
+add_olc_test_target(test_symtab test/test_symtab.cpp)
+add_olc_test_target(test_ir_type test/test_ir_type.cpp)

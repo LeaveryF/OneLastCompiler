@@ -717,8 +717,10 @@ inline constexpr detail::IsaCheckPredicate<Types...> IsaPred{};
 template <typename... Types>
 inline constexpr detail::IsaAndPresentCheckPredicate<Types...>
     IsaAndPresentPred{};
-template <typename T, typename F> const T *dyn_cast_nullable(const F *f) {
-  return f && isa<T>(f) ? cast<T>(f) : nullptr;
+
+template <typename T> void hash_combine(std::size_t &seed, T const &v) {
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
 } // namespace olc

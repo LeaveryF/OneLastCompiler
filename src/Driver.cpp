@@ -43,7 +43,7 @@ int main(int argc, const char *argv[]) {
 
   AssemblyWriter asmWriter{std::cout};
 
-  DebugASTVisitor visitor;
+  CodeGenASTVisitor visitor;
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(module);

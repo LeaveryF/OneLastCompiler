@@ -8,7 +8,8 @@ int main() {
 
   AssemblyWriter asmWriter{std::cout};
   auto *mod = new Module{};
-  Function *mainFunc = new Function{"main"};
+  Type *fnType = FunctionType::get(IntegerType::get(), {});
+  Function *mainFunc = new Function{fnType, "main", {}};
   mod->addFunction(mainFunc);
 
   BasicBlock *entryBB = mainFunc->getEntryBlock();
@@ -20,6 +21,8 @@ int main() {
       entryBB->create<BinaryInst>(Value::Tag::Eq, sum, new ConstantValue(123));
 
   auto *retInst = entryBB->create<ReturnInst>(isEqual123);
+
+  std::cout << op1->getType() << " " << op2->getType() << " " << sum->getType() << std::endl;
 
   asmWriter.printModule(mod);
 
@@ -70,9 +73,10 @@ int main() {
   assert(!isa<User>((Value *)op1));
 
   // 新建函数
-  Function *newFunc = new Function{"newFunc"};
+  Function *newFunc = new Function{fnType, "newFunc", {}};
   BasicBlock *newBlock = newFunc->getEntryBlock();
-  auto *val = new ConstantArray{1.3f, 99};
+  auto *val =
+      new ConstantArray(ArrayType::get(FloatType::get(), 2), 1.3f, 2.7f);
   auto *instr = newBlock->create<BinaryInst>(Value::Tag::Div, val, val);
   std::cout << "==========================\n\n";
   mod->addFunction(newFunc);
