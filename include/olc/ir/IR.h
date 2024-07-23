@@ -155,9 +155,10 @@ struct Function : User {
   std::vector<Argument *> args;
   std::list<BasicBlock *> basicBlocks;
 
-  Function(Type *type, std::string const &fnName, std::vector<Argument *> args)
-      : User(Tag::Function, type), fnName(fnName), args(std::move(args)),
-        isBuiltin(false) {
+  Function(
+      Type *retType, std::string const &fnName, std::vector<Argument *> args)
+      : User(Tag::Function, createFuncType(retType, args)), fnName(fnName),
+        args(std::move(args)), isBuiltin(false) {
     basicBlocks.push_back(new BasicBlock(this, "entry"));
   }
 
@@ -168,6 +169,20 @@ struct Function : User {
   void addBasicBlock(BasicBlock *bb) { basicBlocks.push_back(bb); }
 
   const std::list<BasicBlock *> &getBasicBlocks() const { return basicBlocks; }
+
+  Type *getReturnType() const {
+    return cast<FunctionType>(getType())->getRetType();
+  }
+
+private:
+  static FunctionType *
+  createFuncType(Type *retType, std::vector<Argument *> const &args) {
+    std::vector<Type *> argTypes;
+    for (auto *arg : args) {
+      argTypes.push_back(arg->getType());
+    }
+    return FunctionType::get(retType, argTypes);
+  }
 };
 
 struct Instruction : User {
@@ -323,12 +338,11 @@ struct ConstantArray : Constant {
       : Constant(Tag::ConstArray, type), values(std::move(values)) {}
 
   void print(std::ostream &os) const override {
-    getType()->print(os);
-
-    os << " [ ";
-    for (auto &val : values) {
-      val->print(os);
-      os << " ";
+    os << "[";
+    for (unsigned i = 0; i < values.size(); i++) {
+      if (i > 0)
+        os << ", ";
+      values[i]->print(os);
     }
     os << "]";
   }

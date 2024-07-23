@@ -129,6 +129,9 @@ public:
 
   static FunctionType *get(Type *retType, std::vector<Type *> argTypes);
 
+  const std::vector<Type *> &getArgTypes() const { return argTypes; }
+  Type *getRetType() const { return retType; }
+
   void print(std::ostream &os) const override {
     os << "func(";
     for (auto &paramType : argTypes) {

@@ -14,7 +14,21 @@ void AssemblyWriter::printModule(Module *module) {
 void AssemblyWriter::printFunc(Function *function) {
   nameManager.reset();
 
-  os << "define @" << function->fnName << " {\n";
+  os << "define @" << function->fnName;
+
+  // arguments
+  os << "(";
+  for (unsigned i = 0; i < function->args.size(); i++) {
+    if (i > 0)
+      os << ", ";
+    function->args[i]->getType()->print(os);
+    os << " %" << function->args[i]->argName;
+  }
+
+  os << ") -> ";
+  function->getReturnType()->print(os);
+
+  os << " {\n";
   if (function->isBuiltin)
     olc_unreachable("NYI");
   for (auto &bb : function->basicBlocks) {
@@ -60,6 +74,8 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
       constVal->print(os);
     } else if (auto *instr = dyn_cast<Instruction>(op)) {
       os << "%" << nameManager[instr];
+    } else if (auto *arg = dyn_cast<Argument>(op)) {
+      os << "%" << arg->argName;
     } else if (auto *bb = dyn_cast<BasicBlock>(op)) {
       os << "label %" << bb->label;
     } else {

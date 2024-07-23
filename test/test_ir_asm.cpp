@@ -8,8 +8,14 @@ int main() {
 
   AssemblyWriter asmWriter{std::cout};
   auto *mod = new Module{};
-  Type *fnType = FunctionType::get(IntegerType::get(), {});
-  Function *mainFunc = new Function{fnType, "main", {}};
+
+  // int main(int argc, char **argv) {}
+
+  auto argc = new Argument{IntegerType::get(), "argc"};
+  auto argv = new Argument{
+      PointerType::get(PointerType::get(IntegerType::get())), "argv"};
+
+  Function *mainFunc = new Function{IntegerType::get(), "main", {argc, argv}};
   mod->addFunction(mainFunc);
 
   BasicBlock *entryBB = mainFunc->getEntryBlock();
@@ -22,7 +28,8 @@ int main() {
 
   auto *retInst = entryBB->create<ReturnInst>(isEqual123);
 
-  std::cout << op1->getType() << " " << op2->getType() << " " << sum->getType() << std::endl;
+  std::cout << op1->getType() << " " << op2->getType() << " " << sum->getType()
+            << std::endl;
 
   asmWriter.printModule(mod);
 
@@ -59,6 +66,9 @@ int main() {
   sum->replaceAllUseWith(op1);
   printInfo();
 
+  // 设置返回值为 %argc
+  retInst->setOperand(0, argc);
+
   asmWriter.printModule(mod);
 
   // 测试 classof
@@ -73,7 +83,7 @@ int main() {
   assert(!isa<User>((Value *)op1));
 
   // 新建函数
-  Function *newFunc = new Function{fnType, "newFunc", {}};
+  Function *newFunc = new Function{FloatType::get(), "newFunc", {}};
   BasicBlock *newBlock = newFunc->getEntryBlock();
   auto *val =
       new ConstantArray(ArrayType::get(FloatType::get(), 2), 1.3f, 2.7f);
