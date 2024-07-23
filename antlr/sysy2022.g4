@@ -113,7 +113,7 @@ blockItem
 // 语句
 stmt
 	: lVal '=' expr ';' 					#assignStmt		// 赋值语句
-	| expr ';' 								#exprStmt		// 表达式语句 // ! 表达式语句并没有任何实际作用
+	| expr? ';' 							#exprStmt		// 表达式语句 // ! 表达式语句并没有任何实际作用
 	| block 								#blockStmt		// 语句块
 	| 'if' '(' cond ')' stmt ('else' stmt)? #ifStmt			// if语句 // ! 就近匹配
 	| 'while' '(' cond ')' stmt 			#whileStmt		// while语句
@@ -138,27 +138,26 @@ stmt
 // 3. 和c语言不同 赋值表达式实际上是赋值语句 是一种语句而非表达式 故赋值语句没有"值"的属性
 
 // 表达式
+expr
+	: expr ('*' | '/' | '%') expr
+	| expr ('+' | '-') expr
+	| unaryExpr
+	;
+
+// // 表达式
 // expr
-// 	: expr ('+' | '-' | '*' | '/' | '%' | '==' | '!=' | '>' | '>=' | '<' | '<=' | '&&' | '||') expr
-// 	| primaryExpr
-// 	| unaryExpr
-// 	| ID '(' funcRParams? ')'
+// 	: addExpr
 // 	;
 
-// 表达式
-expr
-	: addExpr
-	;
+// // 加减表达式
+// addExpr
+// 	: mulExpr (('+' | '-') mulExpr)*
+// 	;
 
-// 加减表达式
-addExpr
-	: mulExpr (('+' | '-') mulExpr)*
-	;
-
-// 乘除表达式
-mulExpr
-	: unaryExpr (('*' | '/' | '%') unaryExpr)*
-	;
+// // 乘除表达式
+// mulExpr
+// 	: unaryExpr (('*' | '/' | '%') unaryExpr)*
+// 	;
 
 // 一元表达式
 unaryExpr
@@ -206,28 +205,37 @@ number
 // 语义约束：
 // 逻辑运算符具有短路特性
 cond
-	: lOrExpr
+	: cond ('<' | '>' | '<=' | '>=') cond
+	| cond ('==' | '!=') cond
+	| cond '&&' cond
+	| cond '||' cond
+	| expr
 	;
 
-// 逻辑或表达式
-lOrExpr
-	: lAndExpr ('||' lAndExpr)*
-	;
+// // 条件表达式
+// cond
+// 	: lOrExpr
+// 	;
 
-// 逻辑与表达式
-lAndExpr
-	: eqExpr ('&&' eqExpr)*
-	;
+// // 逻辑或表达式
+// lOrExpr
+// 	: lAndExpr ('||' lAndExpr)*
+// 	;
 
-// 相等性表达式
-eqExpr
-	: relExpr (('==' | '!=') relExpr)*
-	;
+// // 逻辑与表达式
+// lAndExpr
+// 	: eqExpr ('&&' eqExpr)*
+// 	;
 
-// 关系表达式
-relExpr
-	: addExpr (('<' | '>' | '<=' | '>=') addExpr)*
-	;
+// // 相等性表达式
+// eqExpr
+// 	: relExpr (('==' | '!=') relExpr)*
+// 	;
+
+// // 关系表达式
+// relExpr
+// 	: addExpr (('<' | '>' | '<=' | '>=') addExpr)*
+// 	;
 
 //===----------------------------------------------------------------------===//
 // 常量表达式
@@ -240,7 +248,7 @@ relExpr
 // 1. 作为初始化列表时保证可以求值到int或float
 // 2. 作为数组维数时保证可以求值到非负整数
 constExpr
-	: addExpr
+	: expr
 	;
 
 //===----------------------------------------------------------------------===//

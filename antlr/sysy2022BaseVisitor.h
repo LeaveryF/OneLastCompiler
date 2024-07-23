@@ -111,14 +111,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitAddExpr(sysy2022Parser::AddExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitMulExpr(sysy2022Parser::MulExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitUnaryExpr(sysy2022Parser::UnaryExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -144,22 +136,6 @@ public:
   }
 
   virtual std::any visitCond(sysy2022Parser::CondContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitLOrExpr(sysy2022Parser::LOrExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitLAndExpr(sysy2022Parser::LAndExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

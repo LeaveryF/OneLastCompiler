@@ -67,10 +67,6 @@ public:
 
     virtual std::any visitExpr(sysy2022Parser::ExprContext *context) = 0;
 
-    virtual std::any visitAddExpr(sysy2022Parser::AddExprContext *context) = 0;
-
-    virtual std::any visitMulExpr(sysy2022Parser::MulExprContext *context) = 0;
-
     virtual std::any visitUnaryExpr(sysy2022Parser::UnaryExprContext *context) = 0;
 
     virtual std::any visitUnaryOp(sysy2022Parser::UnaryOpContext *context) = 0;
@@ -84,14 +80,6 @@ public:
     virtual std::any visitNumber(sysy2022Parser::NumberContext *context) = 0;
 
     virtual std::any visitCond(sysy2022Parser::CondContext *context) = 0;
-
-    virtual std::any visitLOrExpr(sysy2022Parser::LOrExprContext *context) = 0;
-
-    virtual std::any visitLAndExpr(sysy2022Parser::LAndExprContext *context) = 0;
-
-    virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *context) = 0;
-
-    virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *context) = 0;
 
     virtual std::any visitConstExpr(sysy2022Parser::ConstExprContext *context) = 0;
 
