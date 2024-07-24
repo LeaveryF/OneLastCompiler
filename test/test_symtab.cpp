@@ -2,9 +2,9 @@
 #include <cassert>
 #include <iostream>
 
-using olc::utils::SymTab;
-
 int main() {
+  using namespace olc;
+
   SymTab<std::string, int> symtab;
   symtab.insert("a", 1);
   symtab.insert("b", 2);

@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace olc::utils {
+namespace olc {
 
 /**
  * @brief 符号表
@@ -52,4 +52,4 @@ private:
   std::vector<std::unordered_map<SYM, DAT>> symtab_;
 };
 
-} // namespace olc::utils
+} // namespace olc

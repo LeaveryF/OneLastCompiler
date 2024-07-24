@@ -19,34 +19,53 @@
 using namespace antlr4;
 using namespace olc;
 
-Module *module = new Module{};
-
 int main(int argc, const char *argv[]) {
-  std::ifstream fin("../test/data/09_func_defn.sy");
-  if (!fin) {
-    std::cout << "File not found" << std::endl;
-    return 1;
+  // 多文件批量测试
+  std::ifstream testin("../test/data.txt");
+  std::string fname;
+  std::ofstream logout("logs.txt");
+  std::ofstream errout("errs.txt");
+  std::streambuf *oldCerrBuf = std::cerr.rdbuf(errout.rdbuf());
+  while (std::getline(testin, fname)) {
+    logout << fname << ':' << std::endl;
+    errout << fname << ':' << std::endl;
+    std::cout << fname << ':' << std::endl;
+    std::ifstream fin("../test/" + fname);
+
+    // 单文件测试
+    // std::ifstream fin("../test/data/test.sy");
+    if (!fin) {
+      std::cout << "File not found" << std::endl;
+      return 1;
+    }
+    ANTLRInputStream input(fin);
+    // ANTLRInputStream input("int main() { \n\treturn 0; \n}");
+
+    sysy2022Lexer lexer(&input);
+    CommonTokenStream tokens(&lexer);
+
+    // 输出解析树
+    // sysy2022Parser parser(&tokens);
+    // tree::ParseTree *parse_tree = parser.compUnit();
+    // auto s = parse_tree->toStringTree(&parser);
+    // std::cout << "Parse Tree: " << s << std::endl;
+
+    // 输出中间代码
+    sysy2022Parser parser(&tokens);
+    sysy2022Parser::CompUnitContext *tree = parser.compUnit();
+
+    // 标准输出
+    // AssemblyWriter asmWriter{std::cout};
+
+    // 输出到logs.txt
+    AssemblyWriter asmWriter{logout};
+
+    auto *mod = new Module{};
+    CodeGenASTVisitor visitor{mod};
+    visitor.visitCompUnit(tree);
+
+    asmWriter.printModule(mod);
   }
-  ANTLRInputStream input(fin);
-  // ANTLRInputStream input("int main() { \n\treturn 0; \n}");
-
-  sysy2022Lexer lexer(&input);
-  CommonTokenStream tokens(&lexer);
-
-  sysy2022Parser parser(&tokens);
-  // tree::ParseTree *parse_tree = parser.compUnit();
-
-  // auto s = parse_tree->toStringTree(&parser);
-  // std::cout << "Parse Tree: " << s << std::endl;
-
-  sysy2022Parser::CompUnitContext *tree = parser.compUnit();
-
-  AssemblyWriter asmWriter{std::cout};
-
-  DebugASTVisitor visitor;
-  visitor.visitCompUnit(tree);
-
-  asmWriter.printModule(module);
 
   return 0;
 }

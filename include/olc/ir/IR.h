@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <olc/Support.h>
+#include <olc/ir/Type.h>
 
 namespace olc {
 
@@ -59,8 +60,8 @@ struct Value {
     Phi,
     MemOp,
     MemPhi,
-    IntToFloat,   // 新增
-    FloatToInt,   // 新增
+    IntToFloat, // 新增
+    FloatToInt, // 新增
 
     // anchors
     BeginConst = ConstValue,
@@ -70,7 +71,7 @@ struct Value {
     BeginBinOp = Add,
     EndBinOp = Or,
   } tag;
-  Value(Tag tag) : tag(tag) {}
+  Value(Tag tag, Type *type) : tag(tag), type(type) {}
 
   std::list<Use> uses;
 
@@ -79,13 +80,18 @@ struct Value {
   void removeUse(User *user, int index);
 
   void replaceAllUseWith(Value *v);
+
+  Type *getType() const { return type; };
+
+protected:
+  Type *type;
 };
 
 struct User : public Value {
   std::vector<Value *> operands;
 
-  User(Tag tag, std::vector<Value *> operands = {})
-      : Value(tag), operands(std::move(operands)) {
+  User(Tag tag, Type *type, std::vector<Value *> operands = {})
+      : Value(tag, type), operands(std::move(operands)) {
     for (auto i = 0u; i < this->operands.size(); ++i)
       if (auto &operand = this->operands[i])
         operand->addUse(this, i);
@@ -122,7 +128,8 @@ struct BasicBlock : Value {
   std::list<BasicBlock *> successors;
 
   BasicBlock(Function *parent, std::string const &label)
-      : Value(Tag::BasicBlock), parent(parent), label(label) {}
+      : Value(Tag::BasicBlock, LabelType::get()), parent(parent), label(label) {
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::BasicBlock; }
 
@@ -136,7 +143,8 @@ struct BasicBlock : Value {
 struct Argument : Value {
   std::string argName;
 
-  Argument(std::string const &argName) : Value(Tag::Param), argName(argName) {}
+  Argument(Type *type, std::string const &argName)
+      : Value(Tag::Param, type), argName(argName) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Param; }
 };
@@ -144,11 +152,13 @@ struct Argument : Value {
 struct Function : User {
   bool isBuiltin;
   std::string fnName;
-  std::list<Argument *> args;
+  std::vector<Argument *> args;
   std::list<BasicBlock *> basicBlocks;
 
-  Function(std::string const &fnName)
-      : User(Tag::Function), fnName(fnName), isBuiltin(false) {
+  Function(
+      Type *retType, std::string const &fnName, std::vector<Argument *> args)
+      : User(Tag::Function, createFuncType(retType, args)), fnName(fnName),
+        args(std::move(args)), isBuiltin(false) {
     basicBlocks.push_back(new BasicBlock(this, "entry"));
   }
 
@@ -156,17 +166,30 @@ struct Function : User {
 
   BasicBlock *getEntryBlock() { return basicBlocks.front(); }
 
-  void addArgument(Argument *arg) { args.push_back(arg); }
   void addBasicBlock(BasicBlock *bb) { basicBlocks.push_back(bb); }
 
-  const std::list<Argument *> &getArguments() const { return args; }
   const std::list<BasicBlock *> &getBasicBlocks() const { return basicBlocks; }
+
+  Type *getReturnType() const {
+    return cast<FunctionType>(getType())->getRetType();
+  }
+
+private:
+  static FunctionType *
+  createFuncType(Type *retType, std::vector<Argument *> const &args) {
+    std::vector<Type *> argTypes;
+    for (auto *arg : args) {
+      argTypes.push_back(arg->getType());
+    }
+    return FunctionType::get(retType, argTypes);
+  }
 };
 
 struct Instruction : User {
   BasicBlock *parent;
-  Instruction(BasicBlock *bb, Tag tag, std::vector<Value *> operands)
-      : User(tag, std::move(operands)), parent(bb) {}
+  Instruction(
+      BasicBlock *bb, Type *type, Tag tag, std::vector<Value *> operands = {})
+      : User(tag, type, std::move(operands)), parent(bb) {}
 
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
@@ -175,8 +198,9 @@ struct Instruction : User {
 
 struct BinaryInst : Instruction {
   BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
-      : Instruction(bb, tag, {lhs, rhs}) {
+      : Instruction(bb, lhs->getType(), tag, {lhs, rhs}) {
     assert(tag >= Tag::Add && tag <= Tag::Or);
+    assert(lhs->getType() == rhs->getType() && "Type mismatch");
   }
 
   static bool classof(const Value *V) {
@@ -187,66 +211,58 @@ struct BinaryInst : Instruction {
 struct BranchInst : Instruction {
   BranchInst(
       BasicBlock *bb, Value *cond, BasicBlock *ifTrue, BasicBlock *ifFalse)
-      : Instruction(bb, Tag::Branch, {cond, ifTrue, ifFalse}) {}
+      : Instruction(bb, VoidType::get(), Tag::Branch, {cond, ifTrue, ifFalse}) {
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Branch; }
 };
 
 struct JumpInst : Instruction {
   JumpInst(BasicBlock *bb, BasicBlock *target)
-      : Instruction(bb, Tag::Jump, {target}) {}
+      : Instruction(bb, VoidType::get(), Tag::Jump, {target}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Jump; }
 };
 
 struct ReturnInst : Instruction {
   ReturnInst(BasicBlock *bb, Value *val)
-      : Instruction(bb, Tag::Return, {val}) {}
+      : Instruction(bb, VoidType::get(), Tag::Return, {val}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
 };
 
-struct MemInst: Instruction {
-  bool isInt;
-  MemInst(BasicBlock *bb, Tag tag, std::vector<Value *> operands, bool isInt)
-      : Instruction(bb, tag, operands), isInt(isInt) {}
-};
-
-struct AllocaInst : MemInst {
-  AllocaInst(BasicBlock *bb, bool isInt)
-      : MemInst(bb, Tag::Alloca, {}, isInt) {}
+struct AllocaInst : Instruction {
+  AllocaInst(BasicBlock *bb, Type *elementType)
+      : Instruction(bb, PointerType::get(elementType), Tag::Alloca) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 };
 
-
-struct StoreInst : MemInst {
-  StoreInst(BasicBlock *bb, Value *val, Value *ptr, bool isInt)
-      : MemInst(bb, Tag::Store, {val, ptr}, isInt) {}
+struct StoreInst : Instruction {
+  StoreInst(BasicBlock *bb, Type *type, Value *val, Value *ptr)
+      : Instruction(bb, type, Tag::Store, {val, ptr}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Store; }
 
-  Value* getValue() const { return getOperand(0); }
-  Value* getPointer() const { return getOperand(1); }
+  Value *getValue() const { return getOperand(0); }
+  Value *getPointer() const { return getOperand(1); }
 };
 
-
-struct LoadInst : MemInst {
-  LoadInst(BasicBlock *bb, Value *ptr, bool isInt)
-      : MemInst(bb, Tag::Load, {ptr}, isInt) {}
+struct LoadInst : Instruction {
+  LoadInst(BasicBlock *bb, Type *type, Value *ptr, bool isInt)
+      : Instruction(bb, type, Tag::Load, {ptr}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Load; }
 
-  Value* getPointer() const { return getOperand(0); }
+  Value *getPointer() const { return getOperand(0); }
 };
 
-
 struct GetElementPtrInst : Instruction {
-  GetElementPtrInst(BasicBlock *bb, Value *ptr, std::vector<Value *> indices)
-      : Instruction(bb, Tag::GetElementPtr, {ptr}) {
-    for (auto *index : indices) {
-      addOperand(index);
-    }
+  GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
+      : Instruction(
+            bb, ptr->getType()->getPointerEltType(), Tag::GetElementPtr,
+            {ptr, idx}) {
+    assert(!type->isPointerTy() && "Should access into flat elements");
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
@@ -254,26 +270,29 @@ struct GetElementPtrInst : Instruction {
 
 struct IntToFloatInst : Instruction {
   IntToFloatInst(BasicBlock *bb, Value *intVal)
-      : Instruction(bb, Tag::IntToFloat, {intVal}) {}
+      : Instruction(bb, FloatType::get(), Tag::IntToFloat, {intVal}) {
+    assert(intVal->getType()->isIntegerTy());
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::IntToFloat; }
 
-  Value* getIntValue() const { return getOperand(0); }
+  Value *getIntValue() const { return getOperand(0); }
 };
 
 struct FloatToIntInst : Instruction {
   FloatToIntInst(BasicBlock *bb, Value *floatVal)
-      : Instruction(bb, Tag::FloatToInt, {floatVal}) {}
+      : Instruction(bb, IntegerType::get(), Tag::FloatToInt, {floatVal}) {
+    assert(floatVal->getType()->isFloatTy());
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::FloatToInt; }
 
-  Value* getFloatValue() const { return getOperand(0); }
+  Value *getFloatValue() const { return getOperand(0); }
 };
-
 
 struct Constant : Value {
   // just a base class, no actual features
-  Constant(Value::Tag tag) : Value(tag) {}
+  Constant(Value::Tag tag, Type *type) : Value(tag, type) {}
 
   virtual void print(std::ostream &os) const = 0;
 
@@ -285,8 +304,11 @@ struct Constant : Value {
 struct ConstantValue : Constant {
   std::variant<int, float> value;
 
-  ConstantValue(std::variant<int, float> value)
-      : Constant(Tag::ConstValue), value(value) {}
+  ConstantValue(int value)
+      : Constant(Tag::ConstValue, IntegerType::get()), value(value) {}
+
+  ConstantValue(float value)
+      : Constant(Tag::ConstValue, FloatType::get()), value(value) {}
 
   bool isInt() const { return value.index() == 0; }
   bool isFloat() const { return value.index() == 1; }
@@ -294,10 +316,11 @@ struct ConstantValue : Constant {
   float getFloat() const { return std::get<float>(value); }
 
   void print(std::ostream &os) const override {
+    getType()->print(os);
     if (isInt())
-      os << "i32 " << getInt();
+      os << " " << getInt();
     else
-      os << "f32 " << getFloat();
+      os << " " << getFloat();
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::ConstValue; }
@@ -307,18 +330,19 @@ struct ConstantArray : Constant {
   std::vector<ConstantValue *> values;
 
   template <typename... Args>
-  ConstantArray(Args &&...args)
+  ConstantArray(Type *type, Args &&...args)
       : ConstantArray(
-            std::vector<ConstantValue *>{new ConstantValue(args)...}) {}
+            type, std::vector<ConstantValue *>{new ConstantValue(args)...}) {}
 
-  ConstantArray(std::vector<ConstantValue *> values)
-      : Constant(Tag::ConstArray), values(std::move(values)) {}
+  ConstantArray(Type *type, std::vector<ConstantValue *> values)
+      : Constant(Tag::ConstArray, type), values(std::move(values)) {}
 
   void print(std::ostream &os) const override {
-    os << "[ ";
-    for (auto &val : values) {
-      val->print(os);
-      os << " ";
+    os << "[";
+    for (unsigned i = 0; i < values.size(); i++) {
+      if (i > 0)
+        os << ", ";
+      values[i]->print(os);
     }
     os << "]";
   }
@@ -328,24 +352,27 @@ struct ConstantArray : Constant {
 
 // TODO: model globals
 struct GlobalVariable : User {
-    std::variant<int, float> initialValue;
-    bool isConstant;
+  std::variant<int, float> initialValue;
+  bool isConstant;
 
-    GlobalVariable(std::string const &name, std::variant<int, float> initialValue, bool isConstant)
-        : User(Tag::Global), initialValue(initialValue), isConstant(isConstant), name(name) {}
+  GlobalVariable(
+      Type *type, std::string const &name,
+      std::variant<int, float> initialValue, bool isConstant)
+      // TODO
+      : User(Tag::Global, type), initialValue(initialValue),
+        isConstant(isConstant), name(name) {}
 
-    static bool classof(const Value *V) { return V->tag == Tag::Global; }
+  static bool classof(const Value *V) { return V->tag == Tag::Global; }
 
-    std::string getName() const { return name; }
-    bool isInt() const { return initialValue.index() == 0; }
-    bool isFloat() const { return initialValue.index() == 1; }
-    int getInt() const { return std::get<int>(initialValue); }
-    float getFloat() const { return std::get<float>(initialValue); }
+  std::string getName() const { return name; }
+  bool isInt() const { return initialValue.index() == 0; }
+  bool isFloat() const { return initialValue.index() == 1; }
+  int getInt() const { return std::get<int>(initialValue); }
+  float getFloat() const { return std::get<float>(initialValue); }
 
 private:
-    std::string name;
+  std::string name;
 };
-
 
 struct Module {
   std::list<Function *> functions;
@@ -354,14 +381,14 @@ struct Module {
   void addFunction(Function *fn) { functions.push_back(fn); }
   void addGlobal(GlobalVariable *gv) { globals.push_back(gv); }
 
-    GlobalVariable* getGlobal(const std::string& name) const {
-        for (auto* gv : globals) {
-            if (gv->getName() == name) {
-                return gv;
-            }
-        }
-        return nullptr; 
+  GlobalVariable *getGlobal(const std::string &name) const {
+    for (auto *gv : globals) {
+      if (gv->getName() == name) {
+        return gv;
+      }
     }
+    return nullptr;
+  }
 };
 
 } // namespace olc
