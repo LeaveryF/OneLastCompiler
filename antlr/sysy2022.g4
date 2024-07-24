@@ -1,8 +1,11 @@
- // $antlr-format off
 // $antlr-format reflowComments false
+// $antlr-format off
+
+// antlr语法示例: https://github.com/antlr/grammars-v4
+// antlr语法示例 - c: https://github.com/antlr/grammars-v4/blob/master/c/C.g4
+// antlr语法示例 - c++: https://github.com/antlr/grammars-v4/tree/master/cpp
 
 grammar sysy2022;
-
 
 //===----------------------------------------------------------------------===//
 // 语法部分
@@ -23,18 +26,12 @@ decl
 	| varDecl
 	;
 
-// 基本类型
-basicType
-	: 'int'
-	| 'float'
-	;
-
 //===----------------------------------------------------------------------===//
 // 常量声明部分
 //===----------------------------------------------------------------------===//
 // 常量声明
 constDecl
-	: 'const' basicType constDef (',' constDef)* ';'
+	: 'const' basicType=('int' | 'float') constDef (',' constDef)* ';'
 	;
 
 // 常量定义
@@ -56,7 +53,7 @@ constInitVal
 // 1. 只要有初始化列表都会隐式初始化 全局变量隐式初始化
 // 2. 初始化列表元素类型与数组类型一致 变量或常量初值可以隐式转换
 varDecl
-	: basicType varDef (',' varDef)* ';'
+	: basicType=('int' | 'float') varDef (',' varDef)* ';'
 	;
 
 // 变量定义
@@ -77,18 +74,7 @@ initVal
 // 语义约束：
 // 1. 保证返回值为void时 return语句不带返回值
 funcDef
-	: funcType ID '(' funcFParams? ')' block
-	;
-
-funcType
-	: 'void'
-	| 'int'
-	| 'float'
-	;
-
-// 函数形参表
-funcFParams
-	: funcFParam (',' funcFParam)*
+	: funcType=('void' | 'int' | 'float') ID '(' (funcFParam (',' funcFParam)*)? ')' block
 	;
 
 // 函数形参
@@ -96,18 +82,12 @@ funcFParams
 // 1. 数组传地址
 // 2. 多维数组可以部分传递
 funcFParam
-	: basicType ID ('[' ']' ('[' expr* ']')*)?
+	: basicType=('int' | 'float') ID ('[' ']' ('[' expr* ']')*)?
 	;
 
 // 语句块
 block
-	: '{' blockItem* '}'
-	;
-
-// 语句块项
-blockItem
-	: decl
-	| stmt
+	: '{' (decl | stmt)* '}'
 	;
 
 // 语句
@@ -139,50 +119,19 @@ stmt
 
 // 表达式
 expr
-	: expr ('*' | '/' | '%') expr
-	| expr ('+' | '-') expr
-	| unaryExpr
+	: unaryExpr 						#subUnaryExpr	// 一元表达式
+	| expr op=('*' | '/' | '%') expr	#mulDivModExpr	// 乘除取余表达式
+	| expr op=('+' | '-') expr			#addSubExpr		// 加减表达式
 	;
-
-// // 表达式
-// expr
-// 	: addExpr
-// 	;
-
-// // 加减表达式
-// addExpr
-// 	: mulExpr (('+' | '-') mulExpr)*
-// 	;
-
-// // 乘除表达式
-// mulExpr
-// 	: unaryExpr (('*' | '/' | '%') unaryExpr)*
-// 	;
 
 // 一元表达式
 unaryExpr
-	: primaryExpr
-	| ID '(' funcRParams? ')'
-	| unaryOp unaryExpr
-	;
-
-// 一元运算符
-unaryOp
-	: '+'
-	| '-'
-	| '!'
-	;
-
-// 函数实参表
-funcRParams
-	: expr (',' expr)*
-	;
-
-// 基础表达式
-primaryExpr
-	: '(' expr ')'
-	| lVal
-	| number
+	: '(' expr ')' 						#parenExpr		// 括号表达式
+	| lVal								#lValExpr		// 左值表达式
+	| INT								#intLiteral		// int字面量
+	| FLOAT								#floatLiteral	// float字面量
+	| ID '(' (expr (',' expr)*)? ')'	#funcCall		// 函数调用
+	| op=('+' | '-' | '!') unaryExpr	#recUnaryExpr	// 一元表达式
 	;
 
 // 左值表达式
@@ -192,12 +141,6 @@ lVal
 	: ID ('[' expr ']')*
 	;
 
-// 数字字面量
-number
-	: INT
-	| FLOAT
-	;
-
 //===----------------------------------------------------------------------===//
 // 条件表达式
 //===----------------------------------------------------------------------===//
@@ -205,37 +148,12 @@ number
 // 语义约束：
 // 逻辑运算符具有短路特性
 cond
-	: cond ('<' | '>' | '<=' | '>=') cond
-	| cond ('==' | '!=') cond
-	| cond '&&' cond
-	| cond '||' cond
-	| expr
+	: expr										#binaryExpr	// 二元表达式
+	| cond op=('<' | '>' | '<=' | '>=') cond	#relExpr	// 关系表达式
+	| cond op=('==' | '!=') cond				#eqExpr		// 相等表达式
+	| cond op='&&' cond							#andExpr	// 逻辑与表达式
+	| cond op='||' cond							#orExpr		// 逻辑或表达式
 	;
-
-// // 条件表达式
-// cond
-// 	: lOrExpr
-// 	;
-
-// // 逻辑或表达式
-// lOrExpr
-// 	: lAndExpr ('||' lAndExpr)*
-// 	;
-
-// // 逻辑与表达式
-// lAndExpr
-// 	: eqExpr ('&&' eqExpr)*
-// 	;
-
-// // 相等性表达式
-// eqExpr
-// 	: relExpr (('==' | '!=') relExpr)*
-// 	;
-
-// // 关系表达式
-// relExpr
-// 	: addExpr (('<' | '>' | '<=' | '>=') addExpr)*
-// 	;
 
 //===----------------------------------------------------------------------===//
 // 常量表达式
@@ -277,7 +195,8 @@ FLOAT
     ;
 
 fragment DecimalFloatingConstant
-    : ([0-9]+? '.' [0-9]+ | [0-9]+ '.') ExponentPart?
+    : ([0-9]+)? '.' [0-9]+ ExponentPart?
+	| [0-9]+ '.' ExponentPart?
     | [0-9]+ ExponentPart
     ;
 
@@ -286,7 +205,8 @@ fragment ExponentPart
     ;
 
 fragment HexadecimalFloatingConstant
-    : '0' [xX] ([0-9a-fA-F]+? '.' [0-9a-fA-F]+ | [0-9a-fA-F]+ '.') BinaryExponentPart?
+    : '0' [xX] ([0-9a-fA-F]+)? '.' [0-9a-fA-F]+ BinaryExponentPart?
+	| '0' [xX] [0-9a-fA-F]+ '.' BinaryExponentPart?
     | '0' [xX] [0-9a-fA-F]+ BinaryExponentPart
 	;
 
