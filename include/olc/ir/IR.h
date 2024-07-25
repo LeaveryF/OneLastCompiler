@@ -206,6 +206,24 @@ struct BinaryInst : Instruction {
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginBinOp && V->tag <= Tag::EndBinOp;
   }
+
+  Value* getLHS() const { return getOperand(0); }
+  Value* getRHS() const { return getOperand(1); }
+};
+
+struct CallInst : Instruction {
+  CallInst(BasicBlock *bb, Function *callee, std::vector<Value *> args)
+      : Instruction(bb, callee->getReturnType(), Tag::Call, args) {
+    operands.insert(operands.begin(), callee);
+  }
+
+  static bool classof(const Value *V) { return V->tag == Tag::Call; }
+
+  Function* getCallee() const { return cast<Function>(getOperand(0)); }
+
+  std::vector<Value *> getArgs() const {
+    return std::vector<Value *>(operands.begin() + 1, operands.end());
+  }
 };
 
 struct BranchInst : Instruction {
@@ -215,6 +233,10 @@ struct BranchInst : Instruction {
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::Branch; }
+
+  Value* getCondition() const { return getOperand(0); }
+  BasicBlock* getTrueBlock() const { return cast<BasicBlock>(getOperand(1)); }
+  BasicBlock* getFalseBlock() const { return cast<BasicBlock>(getOperand(2)); }
 };
 
 struct JumpInst : Instruction {
@@ -222,6 +244,8 @@ struct JumpInst : Instruction {
       : Instruction(bb, VoidType::get(), Tag::Jump, {target}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Jump; }
+
+  BasicBlock* getTargetBlock() const { return cast<BasicBlock>(getOperand(0)); }
 };
 
 struct ReturnInst : Instruction {
@@ -229,6 +253,8 @@ struct ReturnInst : Instruction {
       : Instruction(bb, VoidType::get(), Tag::Return, {val}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
+
+  Value* getReturnValue() const { return getOperand(0); }
 };
 
 struct AllocaInst : Instruction {
@@ -236,6 +262,8 @@ struct AllocaInst : Instruction {
       : Instruction(bb, PointerType::get(elementType), Tag::Alloca) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
+
+  // Type* getAllocatedType() const { return getType()->getPointerElementType(); }
 };
 
 struct StoreInst : Instruction {
@@ -266,6 +294,9 @@ struct GetElementPtrInst : Instruction {
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
+
+  Value* getPointerOperand() const { return getOperand(0); }
+  Value* getIndexOperand() const { return getOperand(1); }
 };
 
 struct IntToFloatInst : Instruction {
@@ -350,7 +381,8 @@ struct ConstantArray : Constant {
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
-// TODO: model globals
+// TODO: model globals 
+// Constant
 struct GlobalVariable : User {
   std::variant<int, float> initialValue;
   bool isConstant;
@@ -365,10 +397,6 @@ struct GlobalVariable : User {
   static bool classof(const Value *V) { return V->tag == Tag::Global; }
 
   std::string getName() const { return name; }
-  bool isInt() const { return initialValue.index() == 0; }
-  bool isFloat() const { return initialValue.index() == 1; }
-  int getInt() const { return std::get<int>(initialValue); }
-  float getFloat() const { return std::get<float>(initialValue); }
 
 private:
   std::string name;
