@@ -329,4 +329,31 @@ public:
   visitConstExpr(sysy2022Parser::ConstExprContext *ctx) override {
     return visitChildren(ctx);
   }
+  //  TODO: 全局变量声明
+  // 处理变量声明
+  virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
+    auto *type = convertType(ctx->basicType->getText());
+    for (const auto &varDef : ctx->varDef()) {
+
+      std::string varName = varDef->ID()->getText();
+      Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
+      symbolTable.insert(varName, allocaInst);
+
+      valueMap[varDef] = allocaInst;
+
+      // 处理初始化表达式（如果有）
+      if (varDef->initVal()) {
+        visit(varDef->initVal());
+        if (valueMap.find(varDef->initVal()) == valueMap.end()) {
+          std::cerr << "Initialization value for " << varName << " not found in valueMap" << std::endl;
+          continue;
+        }
+        Value *initVal = valueMap.at(varDef->initVal());
+        curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
+        std::cout << "Stored initialization value for " << varName << std::endl;
+      }
+    }
+    return {};
+  }
+
 };
