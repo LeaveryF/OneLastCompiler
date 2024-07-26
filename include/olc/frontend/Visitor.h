@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <map>
 #include <vector>
@@ -46,28 +46,47 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
-    // 进入新的作用域
-    symbolTable.enterScope();
+  // 声明部分
+  virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
 
+  virtual std::any visitVarDef(sysy2022Parser::VarDefContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  // 函数部分
+  virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
     std::vector<Argument *> args;
 
     // 处理形参
-    if (ctx->funcFParam().size() > 0) {
-      for (const auto &param : ctx->funcFParam()) {
-        auto *type = convertType(param->basicType->getText());
-        args.push_back(new Argument{type, param->ID()->getText()});
-      }
+    for (const auto &param : ctx->funcFParam()) {
+      auto *type = convertType(param->basicType->getText());
+      args.push_back(new Argument{type, param->ID()->getText()});
     }
     // 加到module中
-    // 函数名加到符号表中
     Function *function = new Function(retType, ctx->ID()->getText(), args);
-    symbolTable.insert(ctx->ID()->getText(), function);
     curModule->addFunction(function);
     curFunction = function;
     curBasicBlock = *function->basicBlocks.begin();
+
+    // 生成alloca指令
+
+    // 函数名加到顶层符号表
+    symbolTable.insert(ctx->ID()->getText(), function);
+
+    // 进入新的作用域
+    symbolTable.enterScope();
+    // 参数加到符号表中
+    for (const auto &arg : args) {
+      symbolTable.insert(arg->argName, arg);
+    }
 
     // 处理函数体
     visit(ctx->block());
@@ -86,7 +105,16 @@ public:
 
   // 语句部分
   virtual std::any visitBlock(sysy2022Parser::BlockContext *ctx) override {
-    return visitChildren(ctx);
+    // 进入新的作用域
+    symbolTable.enterScope();
+
+    // 处理块项目
+    visitChildren(ctx);
+
+    // 退出作用域
+    symbolTable.exitScope();
+
+    return {};
   }
 
   virtual std::any
@@ -125,11 +153,14 @@ public:
 
   virtual std::any
   visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
-    // 获取子操作数
-    visit(ctx->expr());
-    auto *retVal = valueMap[ctx->expr()];
-    // 创建指令
-    Value *result = curBasicBlock->create<ReturnInst>(retVal);
+    if (ctx->expr() != nullptr) {
+      // 获取子操作数
+      visit(ctx->expr());
+      auto *retVal = valueMap.at(ctx->expr());
+      // 创建指令
+      Value *result = curBasicBlock->create<ReturnInst>(retVal);
+    } else {
+    }
     return {};
   }
 
@@ -138,10 +169,10 @@ public:
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
     // 获取左操作数
     visit(ctx->expr(0));
-    auto *left = valueMap[ctx->expr(0)];
+    auto *left = valueMap.at(ctx->expr(0));
     // 获取右操作数
     visit(ctx->expr(1));
-    auto *right = valueMap[ctx->expr(1)];
+    auto *right = valueMap.at(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "+") {
@@ -159,10 +190,10 @@ public:
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
     // 获取左操作数
     visit(ctx->expr(0));
-    auto *left = valueMap[ctx->expr(0)];
+    auto *left = valueMap.at(ctx->expr(0));
     // 获取右操作数
     visit(ctx->expr(1));
-    auto *right = valueMap[ctx->expr(1)];
+    auto *right = valueMap.at(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "*") {
@@ -181,14 +212,14 @@ public:
   virtual std::any
   visitSubUnaryExpr(sysy2022Parser::SubUnaryExprContext *ctx) override {
     visit(ctx->unaryExpr());
-    valueMap[ctx] = valueMap[ctx->unaryExpr()];
+    valueMap[ctx] = valueMap.at(ctx->unaryExpr());
     return {};
   }
 
   virtual std::any
   visitParenExpr(sysy2022Parser::ParenExprContext *ctx) override {
     visit(ctx->expr());
-    valueMap[ctx] = valueMap[ctx->expr()];
+    valueMap[ctx] = valueMap.at(ctx->expr());
     return {};
   }
 
@@ -208,16 +239,38 @@ public:
     } else {
       base = 10;
     }
-    int result = std::strtol(intStr.c_str(), nullptr, base);
+    int result = std::stoi(intStr.c_str(), nullptr, base);
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
 
   virtual std::any
   visitFloatLiteral(sysy2022Parser::FloatLiteralContext *ctx) override {
-    // TODO: 十六进制浮点数的处理
     std::string floatStr = ctx->getText();
-    float result = std::strtof(floatStr.c_str(), nullptr);
+    float result = 0.0;
+    if (floatStr.substr(0, 2) == "0x" || floatStr.substr(0, 2) == "0X") {
+      std::string hexStr = "0x0", fracStr = "0x0", expStr = "";
+      int i = 2;
+      while (floatStr[i] != '.' && floatStr[i] != 'p' && floatStr[i] != 'P') {
+        hexStr += floatStr[i++];
+      }
+      if (floatStr[i] == '.') {
+        i++;
+      }
+      result += std::stoi(hexStr.c_str(), nullptr, 16);
+      while (floatStr[i] != 'p' && floatStr[i] != 'P') {
+        fracStr += floatStr[i++];
+      }
+      i++;
+      result +=
+          std::stoi(fracStr.c_str(), nullptr, 16) / pow(16, fracStr.size() - 3);
+      while (i < floatStr.size()) {
+        expStr += floatStr[i++];
+      }
+      result *= pow(2, std::stoi(expStr.c_str(), nullptr, 10));
+    } else {
+      result = std::stof(floatStr.c_str(), nullptr);
+    }
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
@@ -231,26 +284,49 @@ public:
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
     // 获取子操作数
     visit(ctx->unaryExpr());
-    auto *subVal = valueMap[ctx->unaryExpr()];
     // 创建指令
     if (ctx->op->getText() == "+") {
       // do nothing
-      valueMap[ctx] = valueMap[ctx->unaryExpr()];
-      return {};
+      valueMap[ctx] = valueMap.at(ctx->unaryExpr());
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
+      auto *subVal = valueMap.at(ctx->unaryExpr());
       Value *result = curBasicBlock->create<BinaryInst>(
           Value::Tag::Sub, new ConstantValue(0), subVal);
       valueMap[ctx] = result;
-      return {};
     } else {
       // TODO: ! in cond expr
-      valueMap[ctx] = valueMap[ctx->unaryExpr()];
-      return {};
     }
+    return {};
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any
+  visitBinaryExpr(sysy2022Parser::BinaryExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any
+  visitConstExpr(sysy2022Parser::ConstExprContext *ctx) override {
     return visitChildren(ctx);
   }
 };

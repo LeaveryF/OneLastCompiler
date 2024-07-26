@@ -19,22 +19,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitDecl(sysy2022Parser::DeclContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitConstDecl(sysy2022Parser::ConstDeclContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitConstDef(sysy2022Parser::ConstDefContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitConstInitVal(sysy2022Parser::ConstInitValContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
     return visitChildren(ctx);
   }

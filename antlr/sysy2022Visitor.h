@@ -21,14 +21,6 @@ public:
    */
     virtual std::any visitCompUnit(sysy2022Parser::CompUnitContext *context) = 0;
 
-    virtual std::any visitDecl(sysy2022Parser::DeclContext *context) = 0;
-
-    virtual std::any visitConstDecl(sysy2022Parser::ConstDeclContext *context) = 0;
-
-    virtual std::any visitConstDef(sysy2022Parser::ConstDefContext *context) = 0;
-
-    virtual std::any visitConstInitVal(sysy2022Parser::ConstInitValContext *context) = 0;
-
     virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *context) = 0;
 
     virtual std::any visitVarDef(sysy2022Parser::VarDefContext *context) = 0;

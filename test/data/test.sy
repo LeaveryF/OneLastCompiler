@@ -1,8 +1,14 @@
 int a;
-void testexpr(){
+int testexpr(){
+	0x1.8p1 + 0X1.p-1 + 0x.8P2;
     1+2*(3+4);
 	---2;
 	return +5-6/(7-8)%9;
+}
+void func1() {
+	return;
+}
+void func2() {
 }
 /*
 int func(int p){

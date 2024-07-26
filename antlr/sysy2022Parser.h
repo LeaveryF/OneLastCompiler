@@ -22,10 +22,9 @@ public:
   };
 
   enum {
-    RuleCompUnit = 0, RuleDecl = 1, RuleConstDecl = 2, RuleConstDef = 3, 
-    RuleConstInitVal = 4, RuleVarDecl = 5, RuleVarDef = 6, RuleInitVal = 7, 
-    RuleFuncDef = 8, RuleFuncFParam = 9, RuleBlock = 10, RuleStmt = 11, 
-    RuleExpr = 12, RuleUnaryExpr = 13, RuleLVal = 14, RuleCond = 15, RuleConstExpr = 16
+    RuleCompUnit = 0, RuleVarDecl = 1, RuleVarDef = 2, RuleInitVal = 3, 
+    RuleFuncDef = 4, RuleFuncFParam = 5, RuleBlock = 6, RuleStmt = 7, RuleExpr = 8, 
+    RuleUnaryExpr = 9, RuleLVal = 10, RuleCond = 11, RuleConstExpr = 12
   };
 
   explicit sysy2022Parser(antlr4::TokenStream *input);
@@ -46,10 +45,6 @@ public:
 
 
   class CompUnitContext;
-  class DeclContext;
-  class ConstDeclContext;
-  class ConstDefContext;
-  class ConstInitValContext;
   class VarDeclContext;
   class VarDefContext;
   class InitValContext;
@@ -68,8 +63,8 @@ public:
     CompUnitContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *EOF();
-    std::vector<DeclContext *> decl();
-    DeclContext* decl(size_t i);
+    std::vector<VarDeclContext *> varDecl();
+    VarDeclContext* varDecl(size_t i);
     std::vector<FuncDefContext *> funcDef();
     FuncDefContext* funcDef(size_t i);
 
@@ -80,68 +75,9 @@ public:
 
   CompUnitContext* compUnit();
 
-  class  DeclContext : public antlr4::ParserRuleContext {
-  public:
-    DeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    ConstDeclContext *constDecl();
-    VarDeclContext *varDecl();
-
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  DeclContext* decl();
-
-  class  ConstDeclContext : public antlr4::ParserRuleContext {
-  public:
-    antlr4::Token *basicType = nullptr;
-    ConstDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    std::vector<ConstDefContext *> constDef();
-    ConstDefContext* constDef(size_t i);
-
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  ConstDeclContext* constDecl();
-
-  class  ConstDefContext : public antlr4::ParserRuleContext {
-  public:
-    ConstDefContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *ID();
-    ConstInitValContext *constInitVal();
-    std::vector<ConstExprContext *> constExpr();
-    ConstExprContext* constExpr(size_t i);
-
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  ConstDefContext* constDef();
-
-  class  ConstInitValContext : public antlr4::ParserRuleContext {
-  public:
-    ConstInitValContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    ConstExprContext *constExpr();
-    std::vector<ConstInitValContext *> constInitVal();
-    ConstInitValContext* constInitVal(size_t i);
-
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  ConstInitValContext* constInitVal();
-
   class  VarDeclContext : public antlr4::ParserRuleContext {
   public:
+    antlr4::Token *isConst = nullptr;
     antlr4::Token *basicType = nullptr;
     VarDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
@@ -223,8 +159,8 @@ public:
   public:
     BlockContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<DeclContext *> decl();
-    DeclContext* decl(size_t i);
+    std::vector<VarDeclContext *> varDecl();
+    VarDeclContext* varDecl(size_t i);
     std::vector<StmtContext *> stmt();
     StmtContext* stmt(size_t i);
 
