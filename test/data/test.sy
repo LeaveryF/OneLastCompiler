@@ -1,5 +1,5 @@
-int a;
 int testexpr(){
+int a;
 	0x1.8p1 + 0X1.p-1 + 0x.8P2;
     1+2*(3+4);
 	---2;
