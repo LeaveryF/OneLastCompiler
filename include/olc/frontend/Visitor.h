@@ -56,8 +56,6 @@ public:
       Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
       symbolTable.insert(varName, allocaInst);
 
-      valueMap[varDef] = allocaInst;
-
       // 处理初始化表达式（如果有）
       if (varDef->initVal()) {
         visit(varDef->initVal());
@@ -69,11 +67,18 @@ public:
   }
 
   virtual std::any visitVarDef(sysy2022Parser::VarDefContext *ctx) override {
-    return visitChildren(ctx);
+    olc_unreachable("Never");
+    return {};
   }
 
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
-    return visitChildren(ctx);
+    if (ctx->expr()) {
+      visit(ctx->expr());
+      valueMap[ctx] = valueMap.at(ctx->expr());
+    } else {
+      // TODO: 处理初始化列表
+    }
+    return {};
   }
 
   // 函数部分
@@ -93,20 +98,25 @@ public:
     curFunction = function;
     curBasicBlock = *function->basicBlocks.begin();
 
-    // 生成alloca指令
-
     // 函数名加到顶层符号表
     symbolTable.insert(ctx->ID()->getText(), function);
 
     // 进入新的作用域
     symbolTable.enterScope();
-    // 参数加到符号表中
+    // 参数加到符号表中 生成alloca和store指令
     for (const auto &arg : args) {
-      symbolTable.insert(arg->argName, arg);
+      Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
+      curBasicBlock->create<StoreInst>(arg->getType(), arg, allocaInst);
+      symbolTable.insert(arg->argName, allocaInst);
     }
 
     // 处理函数体
     visit(ctx->block());
+
+    // void函数 增加ret指令
+    if (retType->isVoidTy()) {
+      curBasicBlock->create<ReturnInst>();
+    }
 
     // 退出作用域
     symbolTable.exitScope();
@@ -136,17 +146,26 @@ public:
 
   virtual std::any
   visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取右值
+    visit(ctx->expr());
+    auto *rVal = valueMap.at(ctx->expr());
+    // 创建指令
+    visit(ctx->lVal());
+    auto *allocaInst = valueMap.at(ctx->lVal());
+    curBasicBlock->create<StoreInst>(allocaInst->getType(), rVal, allocaInst);
+    return {};
   }
 
   virtual std::any
   visitExprStmt(sysy2022Parser::ExprStmtContext *ctx) override {
-    return visitChildren(ctx);
+    visit(ctx->expr());
+    return {};
   }
 
   virtual std::any
   visitBlockStmt(sysy2022Parser::BlockStmtContext *ctx) override {
-    return visitChildren(ctx);
+    visit(ctx->block());
+    return {};
   }
 
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
@@ -170,13 +189,12 @@ public:
 
   virtual std::any
   visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
-    if (ctx->expr() != nullptr) {
+    if (ctx->expr()) {
       // 获取子操作数
       visit(ctx->expr());
       auto *retVal = valueMap.at(ctx->expr());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
-    } else {
     }
     return {};
   }
@@ -184,6 +202,7 @@ public:
   // 表达式部分
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
+    // TODO: 类型转换
     // 获取左操作数
     visit(ctx->expr(0));
     auto *left = valueMap.at(ctx->expr(0));
@@ -242,7 +261,13 @@ public:
 
   virtual std::any
   visitLValExpr(sysy2022Parser::LValExprContext *ctx) override {
-    return visitChildren(ctx);
+    visit(ctx->lVal());
+    auto *allocaInst = valueMap.at(ctx->lVal());
+    curBasicBlock->create<LoadInst>(
+        allocaInst->getType(), allocaInst,
+        allocaInst->getType()->isIntegerTy());
+    valueMap[ctx] = valueMap.at(ctx->lVal());
+    return {};
   }
 
   virtual std::any
@@ -318,7 +343,10 @@ public:
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
-    return visitChildren(ctx);
+    // TODO: 数组
+    auto *allocaInst = symbolTable.lookup(ctx->ID()->getText());
+    valueMap[ctx] = allocaInst;
+    return {};
   }
 
   virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *ctx) override {
@@ -344,6 +372,7 @@ public:
 
   virtual std::any
   visitConstExpr(sysy2022Parser::ConstExprContext *ctx) override {
-    return visitChildren(ctx);
+    visit(ctx->expr());
+    return {};
   }
 };
