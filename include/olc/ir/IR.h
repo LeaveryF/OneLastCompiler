@@ -213,6 +213,9 @@ private:
   Type *inferType(Tag tag, Value *lhs, Value *rhs) {
     assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
     assert(lhs->getType() == rhs->getType() && "Type mismatch");
+    assert(
+        !lhs->getType()->isPointerTy() &&
+        "Pointers not allowed in binary op");
     if (tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp)
       // i32 type for bool
       return IntegerType::get();
