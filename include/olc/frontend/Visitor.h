@@ -12,7 +12,11 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
+#include "ConstFolder.h"
+
 using namespace olc;
+
+class ConstFoldVisitor;
 
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
@@ -25,6 +29,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   Function *curFunction;
   // 当前基本块
   BasicBlock *curBasicBlock;
+
+  ConstFoldVisitor &constFolder;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -39,7 +45,7 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(Module *module) : curModule(module) {}
+  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder) : curModule(module), curFunction(nullptr), constFolder(constFolder){}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -50,17 +56,39 @@ public:
   // 处理变量声明
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
     auto *type = convertType(ctx->basicType->getText());
+    bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
+
     for (const auto &varDef : ctx->varDef()) {
-
       std::string varName = varDef->ID()->getText();
-      Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
-      symbolTable.insert(varName, allocaInst);
-
-      // 处理初始化表达式（如果有）
-      if (varDef->initVal()) {
-        visit(varDef->initVal());
-        Value *initVal = valueMap.at(varDef->initVal());
-        curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
+      if (isGlobal) {
+        // 初始化全局变量的值
+        std::variant<int, float> initialValue;
+        if (varDef->initVal()) {
+          auto initValAny = constFolder.visit(varDef->initVal());
+          auto *constInitVal = std::any_cast<ConstantValue *>(initValAny);
+          if (constInitVal->isInt()) {
+            initialValue = constInitVal->getInt();
+          } else if (constInitVal->isFloat()) {
+            initialValue = constInitVal->getFloat();
+          }
+        } else {
+          initialValue = (type == IntegerType::get())
+                             ? std::variant<int, float>{0}
+                             : std::variant<int, float>{0.0f};
+        }
+        GlobalVariable *globalVar =
+            new GlobalVariable(type, varName, initialValue, false);
+        curModule->addGlobal(globalVar);
+      } else {
+        // 局部变量分配
+        Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
+        symbolTable.insert(varName, allocaInst);
+        // 处理初始化表达式（如果有）
+        if (varDef->initVal()) {
+          visit(varDef->initVal());
+          Value *initVal = valueMap.at(varDef->initVal());
+          curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
+        }
       }
     }
     return {};
@@ -120,6 +148,9 @@ public:
 
     // 退出作用域
     symbolTable.exitScope();
+
+    curFunction = nullptr;
+    curBasicBlock = nullptr;
 
     return {};
   }

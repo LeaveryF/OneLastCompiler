@@ -384,8 +384,8 @@ struct ConstantArray : Constant {
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
-// TODO: model globals
-// Constant
+// TODO: model globals 
+// TODO: Constant, initval
 struct GlobalVariable : User {
   std::variant<int, float> initialValue;
   bool isConstant;
