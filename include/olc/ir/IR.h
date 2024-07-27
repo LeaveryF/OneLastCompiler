@@ -384,22 +384,24 @@ struct ConstantArray : Constant {
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
-// TODO: model globals 
+// TODO: model globals
 // TODO: Constant, initval
-struct GlobalVariable : User {
-  std::variant<int, float> initialValue;
-  bool isConstant;
+struct GlobalVariable : Constant {
+  Constant *initializer;
 
+  // null initializer means zero init
   GlobalVariable(
-      Type *type, std::string const &name,
-      std::variant<int, float> initialValue, bool isConstant)
-      // TODO
-      : User(Tag::Global, type), initialValue(initialValue),
-        isConstant(isConstant), name(name) {}
+      Type *type, std::string const &name, Constant *initializer = nullptr)
+      : Constant(Tag::Global, PointerType::get(type)), initializer(initializer),
+        name(name) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Global; }
 
   std::string getName() const { return name; }
+
+  Constant *getInitializer() const { return initializer; }
+
+  void print(std::ostream &os) const override { os << "@" << name; }
 
 private:
   std::string name;

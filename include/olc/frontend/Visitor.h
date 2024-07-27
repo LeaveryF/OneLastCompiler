@@ -45,7 +45,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder) : curModule(module), curFunction(nullptr), constFolder(constFolder){}
+  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder)
+      : curModule(module), curFunction(nullptr), constFolder(constFolder) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -62,23 +63,15 @@ public:
       std::string varName = varDef->ID()->getText();
       if (isGlobal) {
         // 初始化全局变量的值
-        std::variant<int, float> initialValue;
+        Constant *initializer = nullptr;
         if (varDef->initVal()) {
-          auto initValAny = constFolder.visit(varDef->initVal());
-          auto *constInitVal = std::any_cast<ConstantValue *>(initValAny);
-          if (constInitVal->isInt()) {
-            initialValue = constInitVal->getInt();
-          } else if (constInitVal->isFloat()) {
-            initialValue = constInitVal->getFloat();
-          }
-        } else {
-          initialValue = (type == IntegerType::get())
-                             ? std::variant<int, float>{0}
-                             : std::variant<int, float>{0.0f};
+          initializer = std::any_cast<ConstantValue *>(
+              constFolder.visit(varDef->initVal()));
         }
         GlobalVariable *globalVar =
-            new GlobalVariable(type, varName, initialValue, false);
+            new GlobalVariable(type, varName, initializer);
         curModule->addGlobal(globalVar);
+        symbolTable.insert(varName, globalVar);
       } else {
         // 局部变量分配
         Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
@@ -376,6 +369,10 @@ public:
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     // TODO: 数组
     auto *allocaInst = symbolTable.lookup(ctx->ID()->getText());
+    if (!allocaInst) {
+      fprintf(stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
+      olc_unreachable("error");
+    }
     valueMap[ctx] = allocaInst;
     return {};
   }

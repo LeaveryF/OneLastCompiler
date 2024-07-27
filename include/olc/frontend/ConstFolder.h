@@ -17,9 +17,6 @@
 using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
-  // 符号表
-  SymTab<std::string, Value *> symbolTable;
-
 public:
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {

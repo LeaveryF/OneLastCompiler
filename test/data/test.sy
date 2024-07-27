@@ -22,6 +22,12 @@ void func1() {
 }
 void func2() {
 }
+
+int gv = (87) / 2;
+int test_gv() {
+	return gv;
+}
+
 /*
 int func(int p){
 	p = p - 1;

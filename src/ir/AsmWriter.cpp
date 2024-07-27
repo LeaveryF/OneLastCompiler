@@ -19,11 +19,10 @@ void AssemblyWriter::printGlobal(GlobalVariable *global) {
   os << "@" << global->getName() << " = global ";
   global->getType()->print(os);
   os << " ";
-  if (global->initialValue.index() == 0) {
-    os << std::get<0>(global->initialValue);
-  } else {
-    os << std::get<1>(global->initialValue);
-  }
+  if (auto *initializer = global->getInitializer())
+    initializer->print(os);
+  else
+    os << "zeroinitializer";
   os << "\n";
 }
 
