@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <variant>
 #include <vector>
 
 #include <antlr4-runtime.h>
@@ -11,23 +12,19 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
+#include <olc/debug.h>
+
 using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
   // 符号表
   SymTab<std::string, Value *> symbolTable;
-//   // 结点返回值
-//   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
-//   // 当前模块
-//   Module *curModule;
-//   // 当前函数
-//   Function *curFunction;
-//   // 当前基本块
-//   BasicBlock *curBasicBlock;
 
 public:
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
+    ConstantValue* result = nullptr;
+
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
     auto *left = std::any_cast<ConstantValue *>(leftAny);
@@ -40,23 +37,31 @@ public:
     if (left && right) {
       if (ctx->op->getText() == "+") {
         if (left->isInt() && right->isInt()) {
-          return new ConstantValue(left->getInt() + right->getInt());
+          result = new ConstantValue(left->getInt() + right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
-          return new ConstantValue(left->getFloat() + right->getFloat());
+          result = new ConstantValue(left->getFloat() + right->getFloat());
+        } else {
+          olc_unreachable("Invalid type for add operation");
         }
       } else if (ctx->op->getText() == "-") {
         if (left->isInt() && right->isInt()) {
-          return new ConstantValue(left->getInt() - right->getInt());
+          result = new ConstantValue(left->getInt() - right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
-          return new ConstantValue(left->getFloat() - right->getFloat());
+          result = new ConstantValue(left->getFloat() - right->getFloat());
+        } else {
+          olc_unreachable("Invalid type for sub operation");
         }
       }
+    } else {
+      olc_unreachable("Invalid type for add/sub operation");
     }
-    return {};
+    return result;
   }
 
   virtual std::any
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
+    ConstantValue* result = nullptr;
+
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
     auto *left = std::any_cast<ConstantValue *>(leftAny);
@@ -69,37 +74,41 @@ public:
     if (left && right) {
       if (ctx->op->getText() == "*") {
         if (left->isInt() && right->isInt()) {
-          return new ConstantValue(left->getInt() * right->getInt());
+          result = new ConstantValue(left->getInt() * right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
-          return new ConstantValue(left->getFloat() * right->getFloat());
+          result = new ConstantValue(left->getFloat() * right->getFloat());
+        } else {
+          olc_unreachable("Invalid type for mul operation");
         }
       } else if (ctx->op->getText() == "/") {
         if (left->isInt() && right->isInt()) {
-          return new ConstantValue(left->getInt() / right->getInt());
+          result = new ConstantValue(left->getInt() / right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
-          return new ConstantValue(left->getFloat() / right->getFloat());
+          result = new ConstantValue(left->getFloat() / right->getFloat());
+        } else {
+          olc_unreachable("Invalid type for div operation");
         }
       } else if (ctx->op->getText() == "%") {
         if (left->isInt() && right->isInt()) {
-          return new ConstantValue(left->getInt() % right->getInt());
+          result = new ConstantValue(left->getInt() % right->getInt());
+        } else {
+          olc_unreachable("Invalid type for mod operation");
         }
       }
+    } else {
+      olc_unreachable("Invalid type for mul/div/mod operation");
     }
-    return {};
+    return result;
   }
 
   virtual std::any
   visitSubUnaryExpr(sysy2022Parser::SubUnaryExprContext *ctx) override {
-    auto unaryAny = visit(ctx->unaryExpr());
-    auto *unary = std::any_cast<ConstantValue *>(unaryAny);
-    if (unary) {
-      if (unary->isInt()) {
-        return new ConstantValue(-unary->getInt());
-      } else if (unary->isFloat()) {
-        return new ConstantValue(-unary->getFloat());
-      }
-    }
-    return {};
+    return visit(ctx->unaryExpr());
+  }
+
+  virtual std::any
+  visitParenExpr(sysy2022Parser::ParenExprContext *ctx) override {
+    return visit(ctx->expr());
   }
 
   virtual std::any
@@ -118,7 +127,56 @@ public:
   virtual std::any
   visitFloatLiteral(sysy2022Parser::FloatLiteralContext *ctx) override {
     std::string floatStr = ctx->getText();
-    float result = std::stof(floatStr);
+    float result = 0.0;
+    if (floatStr.substr(0, 2) == "0x" || floatStr.substr(0, 2) == "0X") {
+      std::string hexStr = "0x0", fracStr = "0x0", expStr = "";
+      int i = 2;
+      while (floatStr[i] != '.' && floatStr[i] != 'p' && floatStr[i] != 'P') {
+        hexStr += floatStr[i++];
+      }
+      if (floatStr[i] == '.') {
+        i++;
+      }
+      result += std::stoi(hexStr.c_str(), nullptr, 16);
+      while (floatStr[i] != 'p' && floatStr[i] != 'P') {
+        fracStr += floatStr[i++];
+      }
+      i++;
+      result +=
+          std::stoi(fracStr.c_str(), nullptr, 16) / pow(16, fracStr.size() - 3);
+      while (i < floatStr.size()) {
+        expStr += floatStr[i++];
+      }
+      result *= pow(2, std::stoi(expStr.c_str(), nullptr, 10));
+    } else {
+      result = std::stof(floatStr.c_str(), nullptr);
+    }
     return new ConstantValue(result);
+  }
+
+  virtual std::any
+  visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
+    ConstantValue* result = nullptr;
+    ConstantValue* expr = std::any_cast<ConstantValue *>(visit(ctx->unaryExpr()));
+
+    if (expr) {
+      if (ctx->op->getText() == "+") {
+        // do nothing
+        result = expr;
+      } else if (ctx->op->getText() == "-") {
+        // -x
+        if (expr->isInt()) {
+          result = new ConstantValue(-expr->getInt());
+        } else if (expr->isFloat()) {
+          result = new ConstantValue(-expr->getFloat());
+        } 
+      } else {
+        olc_unreachable("Unsupported unary operator");
+      }
+    } else {
+      olc_unreachable("Invalid expression for unary operation");
+    }
+
+    return result;
   }
 };
