@@ -295,15 +295,7 @@ public:
   virtual std::any
   visitIntLiteral(sysy2022Parser::IntLiteralContext *ctx) override {
     std::string intStr = ctx->getText();
-    int base = 0;
-    if (intStr.substr(0, 2) == "0x" || intStr.substr(0, 2) == "0X") {
-      base = 16;
-    } else if (intStr.substr(0, 1) == "0") {
-      base = 8;
-    } else {
-      base = 10;
-    }
-    int result = std::stoi(intStr.c_str(), nullptr, base);
+    int result = std::stoi(intStr.c_str(), nullptr, 0);
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
@@ -311,30 +303,7 @@ public:
   virtual std::any
   visitFloatLiteral(sysy2022Parser::FloatLiteralContext *ctx) override {
     std::string floatStr = ctx->getText();
-    float result = 0.0;
-    if (floatStr.substr(0, 2) == "0x" || floatStr.substr(0, 2) == "0X") {
-      std::string hexStr = "0x0", fracStr = "0x0", expStr = "";
-      int i = 2;
-      while (floatStr[i] != '.' && floatStr[i] != 'p' && floatStr[i] != 'P') {
-        hexStr += floatStr[i++];
-      }
-      if (floatStr[i] == '.') {
-        i++;
-      }
-      result += std::stoi(hexStr.c_str(), nullptr, 16);
-      while (floatStr[i] != 'p' && floatStr[i] != 'P') {
-        fracStr += floatStr[i++];
-      }
-      i++;
-      result +=
-          std::stoi(fracStr.c_str(), nullptr, 16) / pow(16, fracStr.size() - 3);
-      while (i < floatStr.size()) {
-        expStr += floatStr[i++];
-      }
-      result *= pow(2, std::stoi(expStr.c_str(), nullptr, 10));
-    } else {
-      result = std::stof(floatStr.c_str(), nullptr);
-    }
+    float result = std::stof(floatStr.c_str());
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
