@@ -21,8 +21,10 @@ class ConstFoldVisitor;
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
   SymTab<std::string, Value *> symbolTable;
-  // 结点返回值
+  // IR Value 表
   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
+  // 推导节点是否为左值
+  std::map<antlr4::ParserRuleContext *, bool> isLValueMap;
   // 当前模块
   Module *curModule;
   // 当前函数
@@ -42,6 +44,18 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
     }
     olc_unreachable("NYI");
     return nullptr;
+  }
+
+  Value *createLValue(antlr4::ParserRuleContext *ctx) {
+    assert(isLValueMap[ctx] && "not a lvalue");
+    return valueMap.at(ctx);
+  }
+
+  Value *createRValue(antlr4::ParserRuleContext *ctx) {
+    if (isLValueMap[ctx]) {
+      return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
+    }
+    return valueMap.at(ctx);
   }
 
 public:
@@ -79,7 +93,7 @@ public:
         // 处理初始化表达式（如果有）
         if (varDef->initVal()) {
           visit(varDef->initVal());
-          Value *initVal = valueMap.at(varDef->initVal());
+          Value *initVal = createRValue(varDef->initVal());
           curBasicBlock->create<StoreInst>(initVal, allocaInst);
         }
       }
@@ -95,9 +109,10 @@ public:
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
     if (ctx->expr()) {
       visit(ctx->expr());
-      valueMap[ctx] = valueMap.at(ctx->expr());
+      valueMap[ctx] = createRValue(ctx->expr());
     } else {
       // TODO: 处理初始化列表
+      olc_unreachable("NYI");
     }
     return {};
   }
@@ -172,11 +187,11 @@ public:
   visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
     // 获取右值
     visit(ctx->expr());
-    auto *rVal = valueMap.at(ctx->expr());
+    auto *rVal = createRValue(ctx->expr());
     // 创建指令
     visit(ctx->lVal());
-    auto *allocaInst = valueMap.at(ctx->lVal());
-    curBasicBlock->create<StoreInst>(rVal, allocaInst);
+    auto *lVal = createLValue(ctx->lVal());
+    curBasicBlock->create<StoreInst>(rVal, lVal);
     return {};
   }
 
@@ -216,7 +231,7 @@ public:
     if (ctx->expr()) {
       // 获取子操作数
       visit(ctx->expr());
-      auto *retVal = valueMap.at(ctx->expr());
+      auto *retVal = createRValue(ctx->expr());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
     }
@@ -229,10 +244,10 @@ public:
     // TODO: 类型转换
     // 获取左操作数
     visit(ctx->expr(0));
-    auto *left = valueMap.at(ctx->expr(0));
+    auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     visit(ctx->expr(1));
-    auto *right = valueMap.at(ctx->expr(1));
+    auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "+") {
@@ -250,10 +265,10 @@ public:
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
     // 获取左操作数
     visit(ctx->expr(0));
-    auto *left = valueMap.at(ctx->expr(0));
+    auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     visit(ctx->expr(1));
-    auto *right = valueMap.at(ctx->expr(1));
+    auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "*") {
@@ -272,7 +287,7 @@ public:
   virtual std::any
   visitSubUnaryExpr(sysy2022Parser::SubUnaryExprContext *ctx) override {
     visit(ctx->unaryExpr());
-    valueMap[ctx] = valueMap.at(ctx->unaryExpr());
+    valueMap[ctx] = createRValue(ctx->unaryExpr());
     return {};
   }
 
@@ -280,15 +295,15 @@ public:
   visitParenExpr(sysy2022Parser::ParenExprContext *ctx) override {
     visit(ctx->expr());
     valueMap[ctx] = valueMap.at(ctx->expr());
+    isLValueMap[ctx] = isLValueMap[ctx->expr()];
     return {};
   }
 
   virtual std::any
   visitLValExpr(sysy2022Parser::LValExprContext *ctx) override {
     visit(ctx->lVal());
-    auto *allocaInst = valueMap.at(ctx->lVal());
-    curBasicBlock->create<LoadInst>(allocaInst->getType(), allocaInst);
     valueMap[ctx] = valueMap.at(ctx->lVal());
+    isLValueMap[ctx] = isLValueMap[ctx->lVal()];
     return {};
   }
 
@@ -320,10 +335,10 @@ public:
     // 创建指令
     if (ctx->op->getText() == "+") {
       // do nothing
-      valueMap[ctx] = valueMap.at(ctx->unaryExpr());
+      valueMap[ctx] = createRValue(ctx->unaryExpr());
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
-      auto *subVal = valueMap.at(ctx->unaryExpr());
+      auto *subVal = createRValue(ctx->unaryExpr());
       Value *result = curBasicBlock->create<BinaryInst>(
           Value::Tag::Sub, new ConstantValue(0), subVal);
       valueMap[ctx] = result;
@@ -334,13 +349,17 @@ public:
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
-    // TODO: 数组
-    auto *allocaInst = symbolTable.lookup(ctx->ID()->getText());
-    if (!allocaInst) {
+    if (ctx->expr().size()) {
+      // TODO: 数组
+      olc_unreachable("NYI");
+    }
+    auto *lVal = symbolTable.lookup(ctx->ID()->getText());
+    if (!lVal) {
       fprintf(stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
       olc_unreachable("error");
     }
-    valueMap[ctx] = allocaInst;
+    valueMap[ctx] = lVal;
+    isLValueMap[ctx] = true;
     return {};
   }
 

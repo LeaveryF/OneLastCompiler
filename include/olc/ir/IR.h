@@ -281,8 +281,9 @@ struct StoreInst : Instruction {
 };
 
 struct LoadInst : Instruction {
-  LoadInst(BasicBlock *bb, Type *type, Value *ptr)
-      : Instruction(bb, type, Tag::Load, {ptr}) {}
+  LoadInst(BasicBlock *bb, Value *ptr)
+      : Instruction(bb, ptr->getType()->getPointerEltType(), Tag::Load, {ptr}) {
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Load; }
 
