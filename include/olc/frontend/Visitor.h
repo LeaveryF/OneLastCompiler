@@ -47,11 +47,13 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
   Value *createLValue(antlr4::ParserRuleContext *ctx) {
+    visit(ctx);
     assert(isLValueMap[ctx] && "not a lvalue");
     return valueMap.at(ctx);
   }
 
   Value *createRValue(antlr4::ParserRuleContext *ctx) {
+    visit(ctx);
     if (isLValueMap[ctx]) {
       return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
     }
@@ -92,7 +94,6 @@ public:
         symbolTable.insert(varName, allocaInst);
         // 处理初始化表达式（如果有）
         if (varDef->initVal()) {
-          visit(varDef->initVal());
           Value *initVal = createRValue(varDef->initVal());
           curBasicBlock->create<StoreInst>(initVal, allocaInst);
         }
@@ -108,7 +109,6 @@ public:
 
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
     if (ctx->expr()) {
-      visit(ctx->expr());
       valueMap[ctx] = createRValue(ctx->expr());
     } else {
       // TODO: 处理初始化列表
@@ -186,10 +186,8 @@ public:
   virtual std::any
   visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
     // 获取右值
-    visit(ctx->expr());
     auto *rVal = createRValue(ctx->expr());
     // 创建指令
-    visit(ctx->lVal());
     auto *lVal = createLValue(ctx->lVal());
     curBasicBlock->create<StoreInst>(rVal, lVal);
     return {};
@@ -230,7 +228,6 @@ public:
   visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
     if (ctx->expr()) {
       // 获取子操作数
-      visit(ctx->expr());
       auto *retVal = createRValue(ctx->expr());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
@@ -243,10 +240,8 @@ public:
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
     // TODO: 类型转换
     // 获取左操作数
-    visit(ctx->expr(0));
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
-    visit(ctx->expr(1));
     auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
@@ -264,10 +259,8 @@ public:
   virtual std::any
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
     // 获取左操作数
-    visit(ctx->expr(0));
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
-    visit(ctx->expr(1));
     auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
@@ -286,7 +279,6 @@ public:
 
   virtual std::any
   visitSubUnaryExpr(sysy2022Parser::SubUnaryExprContext *ctx) override {
-    visit(ctx->unaryExpr());
     valueMap[ctx] = createRValue(ctx->unaryExpr());
     return {};
   }
