@@ -80,6 +80,12 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
     os << "%" << nameManager[instruction] << " = ";
 
   os << opName;
+
+  if (auto *instr = dyn_cast<AllocaInst>(instruction)) {
+    os << " ";
+    instr->getAllocatedType()->print(os);
+  }
+
   for (unsigned i = 0; i < instruction->getNumOperands(); i++) {
     auto &op = instruction->operands[i];
     if (i > 0)

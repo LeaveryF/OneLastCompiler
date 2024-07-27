@@ -265,13 +265,14 @@ struct AllocaInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 
-  // Type* getAllocatedType() const { return getType()->getPointerElementType();
-  // }
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
 };
 
 struct StoreInst : Instruction {
-  StoreInst(BasicBlock *bb, Type *type, Value *val, Value *ptr)
-      : Instruction(bb, type, Tag::Store, {val, ptr}) {}
+  StoreInst(BasicBlock *bb, Value *val, Value *ptr)
+      : Instruction(bb, VoidType::get(), Tag::Store, {val, ptr}) {
+    assert(val->getType() == ptr->getType()->getPointerEltType());
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Store; }
 
@@ -280,7 +281,7 @@ struct StoreInst : Instruction {
 };
 
 struct LoadInst : Instruction {
-  LoadInst(BasicBlock *bb, Type *type, Value *ptr, bool isInt)
+  LoadInst(BasicBlock *bb, Type *type, Value *ptr)
       : Instruction(bb, type, Tag::Load, {ptr}) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Load; }

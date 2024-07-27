@@ -80,7 +80,7 @@ public:
         if (varDef->initVal()) {
           visit(varDef->initVal());
           Value *initVal = valueMap.at(varDef->initVal());
-          curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
+          curBasicBlock->create<StoreInst>(initVal, allocaInst);
         }
       }
     }
@@ -127,7 +127,7 @@ public:
     // 参数加到符号表中 生成alloca和store指令
     for (const auto &arg : args) {
       Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
-      curBasicBlock->create<StoreInst>(arg->getType(), arg, allocaInst);
+      curBasicBlock->create<StoreInst>(arg, allocaInst);
       symbolTable.insert(arg->argName, allocaInst);
     }
 
@@ -176,7 +176,7 @@ public:
     // 创建指令
     visit(ctx->lVal());
     auto *allocaInst = valueMap.at(ctx->lVal());
-    curBasicBlock->create<StoreInst>(allocaInst->getType(), rVal, allocaInst);
+    curBasicBlock->create<StoreInst>(rVal, allocaInst);
     return {};
   }
 
@@ -287,9 +287,7 @@ public:
   visitLValExpr(sysy2022Parser::LValExprContext *ctx) override {
     visit(ctx->lVal());
     auto *allocaInst = valueMap.at(ctx->lVal());
-    curBasicBlock->create<LoadInst>(
-        allocaInst->getType(), allocaInst,
-        allocaInst->getType()->isIntegerTy());
+    curBasicBlock->create<LoadInst>(allocaInst->getType(), allocaInst);
     valueMap[ctx] = valueMap.at(ctx->lVal());
     return {};
   }
