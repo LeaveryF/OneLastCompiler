@@ -1,4 +1,4 @@
-int c;
+int c = 2 * 56 - 10;
 int testexpr(){
 	int b;
 	0x1.8p1 + 0X1.p-1 + 0x.8P2;

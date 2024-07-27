@@ -16,7 +16,7 @@ void AssemblyWriter::printModule(Module *module) {
 }
 
 void AssemblyWriter::printGlobal(GlobalVariable *global) {
-  os << "@" << global->getName() << " = global ";
+  os << "@" << global->getName() << "  global ";
   global->getType()->print(os);
   os << " ";
   if (global->initialValue.index() == 0) {
