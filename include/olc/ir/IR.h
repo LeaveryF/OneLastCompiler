@@ -402,6 +402,8 @@ struct GlobalVariable : Constant {
 
   Constant *getInitializer() const { return initializer; }
 
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
+
   void print(std::ostream &os) const override { os << "@" << name; }
 
 private:
