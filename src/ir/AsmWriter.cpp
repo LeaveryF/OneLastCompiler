@@ -5,10 +5,26 @@
 namespace olc {
 
 void AssemblyWriter::printModule(Module *module) {
+  for (auto &global : module->globals) {
+    printGlobal(global);
+    os << "\n";
+  }
   for (auto &func : module->functions) {
     printFunc(func);
     os << "\n";
   }
+}
+
+void AssemblyWriter::printGlobal(GlobalVariable *global) {
+  os << "@" << global->getName() << " = global ";
+  global->getType()->print(os);
+  os << " ";
+  if (global->initialValue.index() == 0) {
+    os << std::get<0>(global->initialValue);
+  } else {
+    os << std::get<1>(global->initialValue);
+  }
+  os << "\n";
 }
 
 void AssemblyWriter::printFunc(Function *function) {

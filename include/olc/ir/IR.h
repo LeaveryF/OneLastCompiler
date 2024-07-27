@@ -382,7 +382,7 @@ struct ConstantArray : Constant {
 };
 
 // TODO: model globals 
-// Constant
+// TODO: Constant, initval
 struct GlobalVariable : User {
   std::variant<int, float> initialValue;
   bool isConstant;
