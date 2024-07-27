@@ -11,15 +11,21 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
-#include "Visitor.h"
 using namespace olc;
 
-class CodeGenASTVisitor;
+class ConstFoldVisitor : public sysy2022BaseVisitor {
+  // 符号表
+  SymTab<std::string, Value *> symbolTable;
+//   // 结点返回值
+//   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
+//   // 当前模块
+//   Module *curModule;
+//   // 当前函数
+//   Function *curFunction;
+//   // 当前基本块
+//   BasicBlock *curBasicBlock;
 
-class ConstFoldVisitor : public CodeGenASTVisitor {
 public:
-  using CodeGenASTVisitor::CodeGenASTVisitor;
-
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
     // 获取左操作数
