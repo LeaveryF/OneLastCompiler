@@ -70,6 +70,8 @@ struct Value {
     EndInst = MemPhi,
     BeginBinOp = Add,
     EndBinOp = Or,
+    BeginBooleanOp = Lt,
+    EndBooleanOp = Or,
   } tag;
   Value(Tag tag, Type *type) : tag(tag), type(type) {}
 
@@ -198,10 +200,7 @@ struct Instruction : User {
 
 struct BinaryInst : Instruction {
   BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
-      : Instruction(bb, lhs->getType(), tag, {lhs, rhs}) {
-    assert(tag >= Tag::Add && tag <= Tag::Or);
-    assert(lhs->getType() == rhs->getType() && "Type mismatch");
-  }
+      : Instruction(bb, inferType(tag, lhs, rhs), tag, {lhs, rhs}) {}
 
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginBinOp && V->tag <= Tag::EndBinOp;
@@ -209,6 +208,16 @@ struct BinaryInst : Instruction {
 
   Value *getLHS() const { return getOperand(0); }
   Value *getRHS() const { return getOperand(1); }
+
+private:
+  Type *inferType(Tag tag, Value *lhs, Value *rhs) {
+    assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
+    assert(lhs->getType() == rhs->getType() && "Type mismatch");
+    if (tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp)
+      // i32 type for bool
+      return IntegerType::get();
+    return lhs->getType();
+  }
 };
 
 struct CallInst : Instruction {
