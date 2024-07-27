@@ -17,6 +17,8 @@
 #include <olc/debug.h>
 #include <olc/frontend/ConstFolder.h>
 
+#include "ConstFolder.h"
+
 using namespace olc;
 
 class ConstFoldVisitor;
@@ -36,16 +38,6 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   BasicBlock *curBasicBlock;
 
   ConstFoldVisitor &constFolder;
-
-  // 标签计数
-  int labelCnt = 0;
-  // 当前条件块(for continue) 当前结束块(for break) 栈
-  std::vector<BasicBlock *> condBBStack, endBBStack;
-  // 是否提前退出基本块
-  bool earlyExit = false;
-
-  // 当前btrue(for or short circuit) 当前bfalse(for and short circuit) 栈
-  std::vector<BasicBlock *> btrueStack, bfalseStack;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -118,10 +110,7 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(
-      Module *module, ConstFoldVisitor &constFolder, SymbolTable &symbolTable)
-      : curModule(module), curFunction(nullptr), constFolder(constFolder),
-        symbolTable(symbolTable) {}
+  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder) : curModule(module), curFunction(nullptr), constFolder(constFolder){}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -181,179 +170,39 @@ public:
   // 声明部分
   //--------------------------------------------------------------------------
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
-    if (earlyExit)
-      return {};
-
-    Type *type = convertType(ctx->basicType->getText());
+    auto *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
 
     for (const auto &varDef : ctx->varDef()) {
       std::string varName = varDef->ID()->getText();
-      if (varDef->constExpr().size() > 0) {
-        /* 数组定义 */
-        size_t size = 1;
-        std::vector<int> dimSizes;
-        for (const auto &expr : varDef->constExpr()) {
-          dimSizes.push_back(constFolder.resolveInt(expr));
-          size *= dimSizes.back();
-        }
-        Type *arrayType = ArrayType::get(type, size);
-        if (ctx->isConst || isGlobal) {
-          // 全局数组 / 常量数组
-          Constant *initializer = nullptr;
-          if (varDef->initVal()) {
-            std::vector<Constant *> values;
-            std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
-            dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
-              for (auto *val : ctx->initVal()) {
-                if (val->expr()) {
-                  values.push_back(constFolder.resolve(val->expr(), type));
-                } else {
-                  int match = 1, matchDim = dimSizes.size();
-                  while (--matchDim > dim) {
-                    if (values.size() % (match * dimSizes[matchDim]) == 0) {
-                      match *= dimSizes[matchDim];
-                    } else {
-                      break;
-                    }
-                  }
-                  if (matchDim == dimSizes.size() - 1) {
-                    olc_unreachable("初始化列表错误");
-                  }
-                  dfs(val, dim + 1, values.size() + match);
-                }
-              }
-              // 如果是填充到最后，省略末尾的0
-              if (len == size)
-                return;
-              while (values.size() < len) {
-                if (type->isFloatTy()) {
-                  values.push_back(new ConstantValue(0.f));
-                } else {
-                  values.push_back(new ConstantValue(0));
-                }
-              }
-            };
-            dfs(varDef->initVal(), 0, size);
-            bool allZero =
-                std::all_of(values.begin(), values.end(), [&](Constant *val) {
-                  if (auto *constVal = dyn_cast<ConstantValue>(val)) {
-                    return constVal->isInt() && constVal->getInt() == 0;
-                  }
-                  return false;
-                });
-            if (!allZero)
-              initializer =
-                  cast<Constant>(new ConstantArray(arrayType, values));
-            else
-              initializer = nullptr;
+      if (isGlobal) {
+        // 初始化全局变量的值
+        std::variant<int, float> initialValue;
+        if (varDef->initVal()) {
+          auto initValAny = constFolder.visit(varDef->initVal());
+          auto *constInitVal = std::any_cast<ConstantValue *>(initValAny);
+          if (constInitVal->isInt()) {
+            initialValue = constInitVal->getInt();
+          } else if (constInitVal->isFloat()) {
+            initialValue = constInitVal->getFloat();
           }
-          GlobalVariable *globalVar =
-              new GlobalVariable(arrayType, varName, initializer);
-          curModule->addGlobal(globalVar);
-          symbolTable.insert(varName, globalVar, dimSizes);
         } else {
-          // 局部数组分配
-          Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
-          symbolTable.insert(varName, allocaInst, dimSizes);
-          // 处理初始化表达式（如果有）
-          if (varDef->initVal()) {
-            std::vector<Value *> values(size, nullptr);
-            int index = 0;
-
-            bool allZero = true;
-            std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
-            dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
-              for (auto *val : ctx->initVal()) {
-                if (val->expr()) {
-                  values[index++] = createRValue(val->expr(), type);
-                  auto *constVal = dyn_cast<ConstantValue>(values[index - 1]);
-                  if (!constVal)
-                    allZero = false;
-                  else if (constVal->isInt() && constVal->getInt() != 0)
-                    allZero = false;
-                  else if (constVal->isFloat() && constVal->getFloat() != 0.f)
-                    allZero = false;
-                } else {
-                  int match = 1, matchDim = dimSizes.size();
-                  while (--matchDim > dim) {
-                    if (index % (match * dimSizes[matchDim]) == 0) {
-                      match *= dimSizes[matchDim];
-                    } else {
-                      break;
-                    }
-                  }
-                  if (matchDim == dimSizes.size() - 1) {
-                    olc_unreachable("初始化列表错误");
-                  }
-                  dfs(val, dim + 1, index + match);
-                }
-              }
-              index = len;
-            };
-            dfs(varDef->initVal(), 0, size);
-            // 初始化数组
-            // 如果所有值为零，使用__aeabi_memset初始化
-            if (allZero) {
-              // void __aeabi_memset(void *dest, size_t n, int c);
-              Function *memsetFunc =
-                  cast<Function>(symbolTable.lookup("__aeabi_memset"));
-              Value *basePtr = curBasicBlock->create<GetElementPtrInst>(
-                  allocaInst, new ConstantValue(0));
-              std::vector<Value *> args;
-              args.push_back(basePtr);
-              args.push_back(new ConstantValue((int)size * 4));
-              args.push_back(new ConstantValue(0));
-              curBasicBlock->create<CallInst>(memsetFunc, args);
-            } else {
-              // 否则正常初始化数组
-              // 先遍历一遍将nullptr替换为0
-              for (int i = 0; i < (int)size; ++i) {
-                if (!values[i]) {
-                  if (type->isFloatTy()) {
-                    values[i] = new ConstantValue(0.f);
-                  } else {
-                    values[i] = new ConstantValue(0);
-                  }
-                }
-              }
-              for (int i = 0; i < (int)size; ++i) {
-                Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-                    allocaInst, new ConstantValue(i));
-                curBasicBlock->create<StoreInst>(values[i], elementPtr);
-              }
-            }
-          }
+          initialValue = (type == IntegerType::get())
+                             ? std::variant<int, float>{0}
+                             : std::variant<int, float>{0.0f};
         }
+        GlobalVariable *globalVar =
+            new GlobalVariable(type, varName, initialValue, false);
+        curModule->addGlobal(globalVar);
       } else {
-        /* 变量定义 */
-        if (ctx->isConst) {
-          // 常量变量
-          Constant *initializer = nullptr;
-          if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal(), type);
-          }
-          symbolTable.insert(varName, initializer);
-        } else if (isGlobal) {
-          // 初始化全局变量的值
-          Constant *initializer = nullptr;
-          if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal(), type);
-            // 判断全局变量是否为常量
-          }
-          GlobalVariable *globalVar =
-              new GlobalVariable(type, varName, initializer);
-          curModule->addGlobal(globalVar);
-          symbolTable.insert(varName, globalVar);
-        } else {
-          // 局部变量分配
-          Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
-          symbolTable.insert(varName, allocaInst);
-          // 处理初始化表达式（如果有）
-          if (varDef->initVal()) {
-            Value *initVal = createRValue(varDef->initVal()->expr(), type);
-            curBasicBlock->create<StoreInst>(initVal, allocaInst);
-          }
+        // 局部变量分配
+        Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
+        symbolTable.insert(varName, allocaInst);
+        // 处理初始化表达式（如果有）
+        if (varDef->initVal()) {
+          visit(varDef->initVal());
+          Value *initVal = valueMap.at(varDef->initVal());
+          curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
         }
       }
     }
@@ -447,7 +296,6 @@ public:
 
     curFunction = nullptr;
     curBasicBlock = nullptr;
-    earlyExit = false;
 
     return {};
   }

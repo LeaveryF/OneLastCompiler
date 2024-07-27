@@ -101,9 +101,8 @@ int main(int argc, char *argv[]) {
   // AssemblyWriter asmWriter{logout};
 
   auto *mod = new Module{};
-  SymbolTable symbolTable;
-  ConstFoldVisitor constFolder(symbolTable);
-  CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
+  ConstFoldVisitor constFolder;
+  CodeGenASTVisitor visitor(mod, &constFolder);
   visitor.visitCompUnit(tree);
 
   // ArmWriter armWriter{std::cerr};

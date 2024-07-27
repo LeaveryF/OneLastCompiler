@@ -523,10 +523,11 @@ struct ConstantArray : Constant {
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
-// TODO: model globals
+// TODO: model globals 
 // TODO: Constant, initval
-struct GlobalVariable : Constant {
-  Constant *initializer;
+struct GlobalVariable : User {
+  std::variant<int, float> initialValue;
+  bool isConstant;
 
   // null initializer means zero init
   GlobalVariable(
