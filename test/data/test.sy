@@ -1,4 +1,4 @@
-// int a = 1, b, c = 3;
+int a = 1, b, c = 3;
 int testVarDecl() {
 	int a = 4, b, c = 6;
 	b = 2;
@@ -8,13 +8,15 @@ int testParam(int a, int b) {
 	a = 2;
 	return a + b;
 }
+int d = 2 * 56 - 10;
 int testExpr() {
+	int b;
 	0x1.8p1 + 0X1.p-1 + 0x.8P2;
     1+2*(3+4);
 	---2;
 	return +5-6/(7-8)%9;
 }
-int a;
+int e;
 void func1() {
 	return;
 }
