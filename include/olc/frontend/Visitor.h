@@ -46,6 +46,9 @@ public:
     return visitChildren(ctx);
   }
 
+  //--------------------------------------------------------------------------
+  // 声明部分
+  //--------------------------------------------------------------------------
   //  TODO: 全局变量声明
   // 处理变量声明
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
@@ -81,7 +84,9 @@ public:
     return {};
   }
 
+  //--------------------------------------------------------------------------
   // 函数部分
+  //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
@@ -130,7 +135,9 @@ public:
     return {};
   }
 
+  //--------------------------------------------------------------------------
   // 语句部分
+  //--------------------------------------------------------------------------
   virtual std::any visitBlock(sysy2022Parser::BlockContext *ctx) override {
     // 进入新的作用域
     symbolTable.enterScope();
@@ -199,7 +206,9 @@ public:
     return {};
   }
 
+  //--------------------------------------------------------------------------
   // 表达式部分
+  //--------------------------------------------------------------------------
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
     // TODO: 类型转换
@@ -319,7 +328,17 @@ public:
 
   virtual std::any
   visitFuncCall(sysy2022Parser::FuncCallContext *ctx) override {
-    return visitChildren(ctx);
+    auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    std::vector<Value *> args;
+    // 处理实参
+    for (const auto &argCtx : ctx->expr()) {
+      visit(argCtx);
+      auto *value = valueMap.at(argCtx);
+      args.push_back(value);
+    }
+    auto *callInst = curBasicBlock->create<CallInst>(callee, args);
+    valueMap[ctx] = callInst;
+    return {};
   }
 
   virtual std::any
