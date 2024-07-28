@@ -88,9 +88,16 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
 
   for (unsigned i = 0; i < instruction->getNumOperands(); i++) {
     auto &op = instruction->operands[i];
-    if (i > 0)
-      os << ",";
-    os << " ";
+    if (!isa<CallInst>(instruction)) {
+      if (i > 0)
+        os << ",";
+      os << " ";
+    } else {
+      if (i > 1)
+        os << ",";
+      if (i != 1)
+        os << " ";
+    }
     if (auto *constVal = dyn_cast<Constant>(op)) {
       constVal->print(os);
     } else if (auto *instr = dyn_cast<Instruction>(op)) {
@@ -99,9 +106,16 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
       os << "%" << arg->argName;
     } else if (auto *bb = dyn_cast<BasicBlock>(op)) {
       os << "label %" << bb->label;
+    } else if (auto *func = dyn_cast<Function>(op)) {
+      os << "@" << func->fnName;
+      os << "(";
     } else {
       olc_unreachable("NYI");
     }
+  }
+
+  if (auto *instr = dyn_cast<CallInst>(instruction)) {
+    os << ")";
   }
 
   os << "\n";

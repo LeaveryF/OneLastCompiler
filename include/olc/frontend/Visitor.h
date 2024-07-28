@@ -72,7 +72,6 @@ public:
   //--------------------------------------------------------------------------
   // 声明部分
   //--------------------------------------------------------------------------
-  //  TODO: 全局变量声明
   // 处理变量声明
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
     auto *type = convertType(ctx->basicType->getText());
@@ -330,9 +329,8 @@ public:
     std::vector<Value *> args;
     // 处理实参
     for (const auto &argCtx : ctx->expr()) {
-      visit(argCtx);
-      auto *value = valueMap.at(argCtx);
-      args.push_back(value);
+      auto *arg = createRValue(argCtx);
+      args.push_back(arg);
     }
     auto *callInst = curBasicBlock->create<CallInst>(callee, args);
     valueMap[ctx] = callInst;

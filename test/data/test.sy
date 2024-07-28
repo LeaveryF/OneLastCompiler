@@ -1,4 +1,4 @@
-// int a = 1, b, c = 3;
+int a = 1, b, c = 3;
 int testcall(int a, int b) {
 	int c = testcall(a, b+1);
 	return c;
@@ -25,22 +25,10 @@ void func1(float x) {
 	return;
 }
 void func2() {
+	func1();
 }
 
 int gv = (87) / 2;
 int test_gv() {
 	return gv;
 }
-
-/*
-int func(int p){
-	p = p - 1;
-	return p;
-}
-int main(){
-	int b;
-	a = 10;
-	b = func(a);
-	return b;
-}
-*/
