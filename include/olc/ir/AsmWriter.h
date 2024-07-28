@@ -33,6 +33,7 @@ public:
   AssemblyWriter(std::ostream &os) : os(os) {}
 
   void printModule(Module *);
+  void printGlobal(GlobalVariable *);
   void printFunc(Function *);
   void printBasicBlock(BasicBlock *);
   void printInstr(Instruction *);

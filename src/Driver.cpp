@@ -61,7 +61,8 @@ int main(int argc, const char *argv[]) {
   // AssemblyWriter asmWriter{logout};
 
   auto *mod = new Module{};
-  CodeGenASTVisitor visitor{mod};
+  ConstFoldVisitor constFolder;
+  CodeGenASTVisitor visitor(mod, constFolder);
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(mod);

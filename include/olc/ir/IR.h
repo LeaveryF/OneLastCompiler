@@ -70,6 +70,8 @@ struct Value {
     EndInst = MemPhi,
     BeginBinOp = Add,
     EndBinOp = Or,
+    BeginBooleanOp = Lt,
+    EndBooleanOp = Or,
   } tag;
   Value(Tag tag, Type *type) : tag(tag), type(type) {}
 
@@ -198,10 +200,7 @@ struct Instruction : User {
 
 struct BinaryInst : Instruction {
   BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
-      : Instruction(bb, lhs->getType(), tag, {lhs, rhs}) {
-    assert(tag >= Tag::Add && tag <= Tag::Or);
-    assert(lhs->getType() == rhs->getType() && "Type mismatch");
-  }
+      : Instruction(bb, inferType(tag, lhs, rhs), tag, {lhs, rhs}) {}
 
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginBinOp && V->tag <= Tag::EndBinOp;
@@ -209,6 +208,19 @@ struct BinaryInst : Instruction {
 
   Value *getLHS() const { return getOperand(0); }
   Value *getRHS() const { return getOperand(1); }
+
+private:
+  Type *inferType(Tag tag, Value *lhs, Value *rhs) {
+    assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
+    assert(lhs->getType() == rhs->getType() && "Type mismatch");
+    assert(
+        !lhs->getType()->isPointerTy() &&
+        "Pointers not allowed in binary op");
+    if (tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp)
+      // i32 type for bool
+      return IntegerType::get();
+    return lhs->getType();
+  }
 };
 
 struct CallInst : Instruction {
@@ -265,13 +277,14 @@ struct AllocaInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 
-  // Type* getAllocatedType() const { return getType()->getPointerElementType();
-  // }
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
 };
 
 struct StoreInst : Instruction {
-  StoreInst(BasicBlock *bb, Type *type, Value *val, Value *ptr)
-      : Instruction(bb, type, Tag::Store, {val, ptr}) {}
+  StoreInst(BasicBlock *bb, Value *val, Value *ptr)
+      : Instruction(bb, VoidType::get(), Tag::Store, {val, ptr}) {
+    assert(val->getType() == ptr->getType()->getPointerEltType());
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Store; }
 
@@ -280,8 +293,9 @@ struct StoreInst : Instruction {
 };
 
 struct LoadInst : Instruction {
-  LoadInst(BasicBlock *bb, Type *type, Value *ptr, bool isInt)
-      : Instruction(bb, type, Tag::Load, {ptr}) {}
+  LoadInst(BasicBlock *bb, Value *ptr)
+      : Instruction(bb, ptr->getType()->getPointerEltType(), Tag::Load, {ptr}) {
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Load; }
 
@@ -385,21 +399,25 @@ struct ConstantArray : Constant {
 };
 
 // TODO: model globals
-// Constant
-struct GlobalVariable : User {
-  std::variant<int, float> initialValue;
-  bool isConstant;
+// TODO: Constant, initval
+struct GlobalVariable : Constant {
+  Constant *initializer;
 
+  // null initializer means zero init
   GlobalVariable(
-      Type *type, std::string const &name,
-      std::variant<int, float> initialValue, bool isConstant)
-      // TODO
-      : User(Tag::Global, type), initialValue(initialValue),
-        isConstant(isConstant), name(name) {}
+      Type *type, std::string const &name, Constant *initializer = nullptr)
+      : Constant(Tag::Global, PointerType::get(type)), initializer(initializer),
+        name(name) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Global; }
 
   std::string getName() const { return name; }
+
+  Constant *getInitializer() const { return initializer; }
+
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
+
+  void print(std::ostream &os) const override { os << "@" << name; }
 
 private:
   std::string name;

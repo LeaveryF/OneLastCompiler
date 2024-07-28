@@ -5,10 +5,25 @@
 namespace olc {
 
 void AssemblyWriter::printModule(Module *module) {
+  for (auto &global : module->globals) {
+    printGlobal(global);
+  }
+  os << "\n";
   for (auto &func : module->functions) {
     printFunc(func);
     os << "\n";
   }
+}
+
+void AssemblyWriter::printGlobal(GlobalVariable *global) {
+  os << "@" << global->getName() << " = global ";
+  global->getAllocatedType()->print(os);
+  os << ", ";
+  if (auto *initializer = global->getInitializer())
+    initializer->print(os);
+  else
+    os << "zeroinitializer";
+  os << "\n";
 }
 
 void AssemblyWriter::printFunc(Function *function) {
@@ -65,6 +80,12 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
     os << "%" << nameManager[instruction] << " = ";
 
   os << opName;
+
+  if (auto *instr = dyn_cast<AllocaInst>(instruction)) {
+    os << " ";
+    instr->getAllocatedType()->print(os);
+  }
+
   for (unsigned i = 0; i < instruction->getNumOperands(); i++) {
     auto &op = instruction->operands[i];
     if (i > 0)

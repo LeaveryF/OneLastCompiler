@@ -12,17 +12,26 @@ int testParam(int a, int b) {
 	a = 2;
 	return a + b;
 }
+int d = 2 * 56 - 10;
 int testExpr() {
+	int b;
 	0x1.8p1 + 0X1.p-1 + 0x.8P2;
     1+2*(3+4);
 	---2;
 	return +5-6/(7-8)%9;
 }
-void func1() {
+int e = 1+2*(3+4);
+void func1(float x) {
 	return;
 }
 void func2() {
 }
+
+int gv = (87) / 2;
+int test_gv() {
+	return gv;
+}
+
 /*
 int func(int p){
 	p = p - 1;
