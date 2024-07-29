@@ -12,7 +12,8 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
-#include "ConstFolder.h"
+#include <olc/frontend/ConstFolder.h>
+#include <olc/debug.h>
 
 using namespace olc;
 
@@ -20,7 +21,7 @@ class ConstFoldVisitor;
 
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> symbolTable;
+  SymTab<std::string, Value *> &symbolTable;
   // IR Value 表
   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
   // 推导节点是否为左值
@@ -61,16 +62,14 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder)
-      : curModule(module), curFunction(nullptr), constFolder(constFolder) {}
+  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder, SymTab<std::string, Value *> &symbolTable)
+      : curModule(module), curFunction(nullptr), constFolder(constFolder), symbolTable(symbolTable) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  //  TODO: 全局变量声明
-  // 处理变量声明
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
     auto *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
@@ -83,6 +82,7 @@ public:
         if (varDef->initVal()) {
           initializer = std::any_cast<ConstantValue *>(
               constFolder.visit(varDef->initVal()));
+          // 判断全局变量是否为常量
         }
         GlobalVariable *globalVar =
             new GlobalVariable(type, varName, initializer);

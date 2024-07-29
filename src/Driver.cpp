@@ -20,6 +20,7 @@ using namespace antlr4;
 using namespace olc;
 
 int main(int argc, const char *argv[]) {
+  SymTab<std::string, Value *> symbolTable;
   // 多文件批量测试
   // std::ifstream testin("../test/data.txt");
   // std::string fname;
@@ -61,8 +62,8 @@ int main(int argc, const char *argv[]) {
   // AssemblyWriter asmWriter{logout};
 
   auto *mod = new Module{};
-  ConstFoldVisitor constFolder;
-  CodeGenASTVisitor visitor(mod, constFolder);
+  ConstFoldVisitor constFolder(symbolTable);
+  CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(mod);

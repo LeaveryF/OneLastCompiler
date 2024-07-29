@@ -419,6 +419,9 @@ struct GlobalVariable : Constant {
 
   void print(std::ostream &os) const override { os << "@" << name; }
 
+  bool isInt() const { return getAllocatedType()->isIntegerTy(); }
+  bool isFloat() const { return getAllocatedType()->isFloatTy(); }
+
 private:
   std::string name;
 };
