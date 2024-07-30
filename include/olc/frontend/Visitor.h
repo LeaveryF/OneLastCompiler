@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -35,7 +36,10 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
 
   ConstFoldVisitor &constFolder;
 
+  // 标签计数
   int labelCnt;
+  // 当前条件块(for continue) 当前结束块(for break)
+  BasicBlock *curCondBB, *curEndBB;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -252,7 +256,7 @@ public:
 
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
     // 获取条件
-    auto *cond = createRValue(ctx->cond());
+    auto *condInst = createRValue(ctx->cond());
     // 创建基本块
     BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
     btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
@@ -260,24 +264,24 @@ public:
       bfalse =
           new BasicBlock(curFunction, "bfalse" + std::to_string(labelCnt++));
     }
-    end = new BasicBlock(curFunction, "end" + std::to_string(labelCnt++));
+    end = new BasicBlock(curFunction, "endif" + std::to_string(labelCnt++));
 
     btrue->predecessors.push_back(curBasicBlock);
+    curBasicBlock->successors.push_back(btrue);
+
     if (bfalse) {
       bfalse->predecessors.push_back(curBasicBlock);
-    }
-    end->predecessors.push_back(btrue);
-    end->predecessors.push_back(bfalse ? bfalse : curBasicBlock);
-
-    curBasicBlock->successors.push_back(btrue);
-    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
-    btrue->successors.push_back(end);
-    if (bfalse) {
       bfalse->successors.push_back(end);
     }
 
+    end->predecessors.push_back(btrue);
+    btrue->successors.push_back(end);
+
+    end->predecessors.push_back(bfalse ? bfalse : curBasicBlock);
+    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
+
     // 创建指令
-    curBasicBlock->create<BranchInst>(cond, btrue, bfalse ? bfalse : end);
+    curBasicBlock->create<BranchInst>(condInst, btrue, bfalse ? bfalse : end);
 
     // btrue
     curFunction->addBasicBlock(btrue);
@@ -302,17 +306,72 @@ public:
 
   virtual std::any
   visitWhileStmt(sysy2022Parser::WhileStmtContext *ctx) override {
-    return visitChildren(ctx);
+    // 创建基本块
+    BasicBlock *cond = nullptr, *loop = nullptr, *end = nullptr;
+    cond = new BasicBlock(curFunction, "cond" + std::to_string(labelCnt++));
+    loop = new BasicBlock(curFunction, "loop" + std::to_string(labelCnt++));
+    end = new BasicBlock(curFunction, "endloop" + std::to_string(labelCnt++));
+    curCondBB = cond;
+    curEndBB = end;
+
+    cond->predecessors.push_back(curBasicBlock);
+    curBasicBlock->successors.push_back(cond);
+
+    loop->predecessors.push_back(cond);
+    cond->successors.push_back(loop);
+
+    end->predecessors.push_back(cond);
+    cond->successors.push_back(end);
+
+    cond->predecessors.push_back(loop);
+    loop->successors.push_back(cond);
+
+    // 创建指令
+    curBasicBlock->create<JumpInst>(cond);
+
+    // cond
+    curFunction->addBasicBlock(cond);
+    curBasicBlock = cond;
+    // 获取条件
+    auto *condInst = createRValue(ctx->cond());
+    // 创建指令
+    curBasicBlock->create<BranchInst>(condInst, loop, end);
+
+    // loop
+    curFunction->addBasicBlock(loop);
+    curBasicBlock = loop;
+    visit(ctx->stmt());
+    curBasicBlock->create<JumpInst>(cond);
+
+    // end
+    curFunction->addBasicBlock(end);
+    curBasicBlock = end;
+
+    return {};
   }
 
   virtual std::any
   visitBreakStmt(sysy2022Parser::BreakStmtContext *ctx) override {
-    return visitChildren(ctx);
+    curBasicBlock->create<JumpInst>(curEndBB);
+    if (find(
+            curEndBB->predecessors.begin(), curEndBB->predecessors.end(),
+            curBasicBlock) == curEndBB->predecessors.end()) {
+      curEndBB->predecessors.push_back(curBasicBlock);
+      curBasicBlock->successors.push_back(curEndBB);
+    }
+    return {};
   }
 
   virtual std::any
   visitContinueStmt(sysy2022Parser::ContinueStmtContext *ctx) override {
-    return visitChildren(ctx);
+    curBasicBlock->create<JumpInst>(curCondBB);
+    if (find(
+            curCondBB->predecessors.begin(), curCondBB->predecessors.end(),
+            curBasicBlock) == curCondBB->predecessors.end()) {
+      curCondBB->predecessors.push_back(curBasicBlock);
+      curBasicBlock->successors.push_back(curCondBB);
+    }
+    return {};
   }
 
   virtual std::any
