@@ -29,7 +29,7 @@ public:
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     // 获取变量名
     std::string varName = ctx->ID()->getText();
-    // 获取变量值
+    // 获取变量值, 若语义正确获得的应为常量全局变量.
     ConstantValue *result = 
         (ConstantValue *)((GlobalVariable *)symbolTable.lookup(varName))->getInitializer();
     if (result) {

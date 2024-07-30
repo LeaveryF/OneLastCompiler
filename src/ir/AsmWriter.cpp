@@ -66,7 +66,7 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
 
 constexpr char const *kInstTagToOpName[] = {
     "add", "sub", "mul",  "div",    "mod", "lt",    "le",    "ge",  "gt",
-    "eq",  "ne",  "and",  "or",     "rsb", "br",    "jmp",   "ret", "gep",
+    "eq",  "ne",  "and",  "or",     "rsb", "br",    "jmp",   "ret", "getelementptr",
     "ld",  "st",  "call", "alloca", "phi", "memop", "memphi"};
 
 void AssemblyWriter::printInstr(Instruction *instruction) {

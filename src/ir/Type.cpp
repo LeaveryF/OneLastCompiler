@@ -83,15 +83,17 @@ PointerType *PointerType::get(Type *pointeeType) {
   return res;
 }
 
-ArrayType *ArrayType::get(Type *elemType, std::size_t size) {
+ArrayType *ArrayType::get(Type *elemType, std::size_t size, std::vector<int> dimSizes) {
   std::size_t hash = SEED;
   hash_combine(hash, static_cast<std::size_t>(Tag::Array));
   hash_combine(hash, std::hash<Type *>{}(elemType));
   hash_combine(hash, size);
+  for (auto dimSize : dimSizes)
+    hash_combine(hash, dimSize);
   if (auto *res = cast_if_present<ArrayType>(typeCache.getType(hash)))
     return res;
 
-  auto *res = new ArrayType(elemType, size);
+  auto *res = new ArrayType(elemType, size, std::move(dimSizes));
   typeCache.addType(hash, res);
   return res;
 }

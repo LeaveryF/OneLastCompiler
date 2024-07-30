@@ -62,8 +62,11 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder, SymTab<std::string, Value *> &symbolTable)
-      : curModule(module), curFunction(nullptr), constFolder(constFolder), symbolTable(symbolTable) {}
+  CodeGenASTVisitor(
+      Module *module, ConstFoldVisitor &constFolder,
+      SymTab<std::string, Value *> &symbolTable)
+      : curModule(module), curFunction(nullptr), constFolder(constFolder),
+        symbolTable(symbolTable) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -71,11 +74,35 @@ public:
   }
 
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
-    auto *type = convertType(ctx->basicType->getText());
+    Type *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
 
     for (const auto &varDef : ctx->varDef()) {
       std::string varName = varDef->ID()->getText();
+      if (varDef->constExpr().size() > 0) {
+        size_t size = 1;
+        std::vector<int> dimSizes;
+        for (const auto &expr : varDef->constExpr()) {
+          int d = std::any_cast<ConstantValue *>(
+                      constFolder.visit(expr))->getInt();
+          size *= d;
+          dimSizes.push_back(d);
+        }
+        Type *arrayType = ArrayType::get(type, size, dimSizes);
+        if (isGlobal) {
+          olc_unreachable("NYI");
+        } else {
+          // 局部变量分配
+          Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
+          symbolTable.insert(varName, allocaInst);
+          // 处理初始化表达式（如果有）
+          if (varDef->initVal()) {
+            Value *initVal = createRValue(varDef->initVal());
+            curBasicBlock->create<StoreInst>(initVal, allocaInst);
+          }
+        }
+      } 
+      else {
       if (isGlobal) {
         // 初始化全局变量的值
         Constant *initializer = nullptr;
@@ -98,6 +125,7 @@ public:
           curBasicBlock->create<StoreInst>(initVal, allocaInst);
         }
       }
+      }
     }
     return {};
   }
@@ -112,6 +140,13 @@ public:
       valueMap[ctx] = createRValue(ctx->expr());
     } else {
       // TODO: 处理初始化列表
+      std::vector<Value *> initValues;
+      for (const auto &initVal : ctx->initVal()) {
+        visit(initVal);
+        initValues.push_back(valueMap.at(initVal));
+        // ...
+      }
+      // valueMap[ctx] =  
       olc_unreachable("NYI");
     }
     return {};

@@ -98,16 +98,17 @@ public:
 class ArrayType : public Type {
   Type *elemType;
   size_t size;
+  std::vector<int> dimSizes;
 
-  ArrayType(Type *elemType, size_t size)
-      : Type(Tag::Array), elemType(elemType), size(size) {
+  ArrayType(Type *elemType, size_t size, std::vector<int> dimSizes)
+      : Type(Tag::Array), elemType(elemType), size(size), dimSizes(dimSizes) {
     assert(size > 0 && "Array size must be greater than 0");
   }
 
 public:
   static bool classof(const Type *T) { return T->tag == Tag::Array; }
 
-  static ArrayType *get(Type *elemType, size_t size);
+  static ArrayType *get(Type *elemType, size_t size, std::vector<int> dimSizes);
 
   void print(std::ostream &os) const override {
     os << "[";
