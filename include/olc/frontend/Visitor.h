@@ -34,6 +34,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
 
   ConstFoldVisitor &constFolder;
 
+  int labelCnt;
+
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
       return IntegerType::get();
@@ -62,7 +64,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
 
 public:
   CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder)
-      : curModule(module), curFunction(nullptr), constFolder(constFolder) {}
+      : curModule(module), curFunction(nullptr), constFolder(constFolder),
+        labelCnt(0) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -154,7 +157,9 @@ public:
     visit(ctx->block());
 
     // void函数 增加ret指令
-    if (retType->isVoidTy()) {
+    if (retType->isVoidTy() &&
+        (curBasicBlock->instructions.size() == 0 ||
+         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
       curBasicBlock->create<ReturnInst>();
     }
 
@@ -212,7 +217,35 @@ public:
   }
 
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取条件
+    auto *cond = createRValue(ctx->cond());
+    BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
+    btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
+    if (ctx->stmt().size() == 2) {
+      bfalse =
+          new BasicBlock(curFunction, "bfalse" + std::to_string(labelCnt++));
+    }
+    end = new BasicBlock(curFunction, "end" + std::to_string(labelCnt++));
+    curBasicBlock->create<BranchInst>(cond, btrue, bfalse ? bfalse : end);
+
+    // btrue
+    curFunction->addBasicBlock(btrue);
+    curBasicBlock = btrue;
+    visit(ctx->stmt(0));
+    curBasicBlock->create<JumpInst>(end);
+
+    // bfalse
+    if (ctx->stmt().size() == 2) {
+      curFunction->addBasicBlock(bfalse);
+      curBasicBlock = bfalse;
+      visit(ctx->stmt(1));
+      curBasicBlock->create<JumpInst>(end);
+    }
+
+    curFunction->addBasicBlock(end);
+    curBasicBlock = end;
+
+    return {};
   }
 
   virtual std::any
@@ -237,6 +270,8 @@ public:
       auto *retVal = createRValue(ctx->expr());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
+    } else {
+      Value *result = curBasicBlock->create<ReturnInst>();
     }
     return {};
   }
@@ -339,8 +374,6 @@ public:
 
   virtual std::any
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
-    // 获取子操作数
-    visit(ctx->unaryExpr());
     // 创建指令
     if (ctx->op->getText() == "+") {
       // do nothing
@@ -352,7 +385,10 @@ public:
           Value::Tag::Sub, new ConstantValue(0), subVal);
       valueMap[ctx] = result;
     } else {
-      // TODO: ! in cond expr
+      auto *subVal = createRValue(ctx->unaryExpr());
+      Value *result = curBasicBlock->create<BinaryInst>(
+          Value::Tag::Eq, subVal, new ConstantValue(0));
+      valueMap[ctx] = result;
     }
     return {};
   }
@@ -373,29 +409,80 @@ public:
   }
 
   virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::Undef;
+    if (ctx->op->getText() == "==") {
+      tag = Value::Tag::Eq;
+    } else {
+      tag = Value::Tag::Ne;
+    }
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any
   visitBinaryExpr(sysy2022Parser::BinaryExprContext *ctx) override {
-    return visitChildren(ctx);
+    valueMap[ctx] = createRValue(ctx->expr());
+    return {};
   }
 
   virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::Or;
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::Undef;
+    if (ctx->op->getText() == "<") {
+      tag = Value::Tag::Lt;
+    } else if (ctx->op->getText() == ">") {
+      tag = Value::Tag::Gt;
+    } else if (ctx->op->getText() == "<=") {
+      tag = Value::Tag::Le;
+    } else {
+      tag = Value::Tag::Ge;
+    }
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::And;
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any
   visitConstExpr(sysy2022Parser::ConstExprContext *ctx) override {
-    visit(ctx->expr());
+    valueMap[ctx] = createRValue(ctx->expr());
     return {};
   }
 };
