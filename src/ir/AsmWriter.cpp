@@ -55,14 +55,14 @@ void AssemblyWriter::printFunc(Function *function) {
 void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
   os << basicBlock->label << ":\n";
   if (!basicBlock->predecessors.empty()) {
-    os << "; prev:";
+    os << "; predecessors:";
     for (auto *pred : basicBlock->predecessors) {
       os << " " << pred->label;
     }
     os << "\n";
   }
   if (!basicBlock->successors.empty()) {
-    os << "; next:";
+    os << "; successors:";
     for (auto *succ : basicBlock->successors) {
       os << " " << succ->label;
     }

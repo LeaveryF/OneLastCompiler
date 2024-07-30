@@ -164,6 +164,8 @@ public:
   // 函数部分
   //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
+    labelCnt = 0;
+
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
     std::vector<Argument *> args;
