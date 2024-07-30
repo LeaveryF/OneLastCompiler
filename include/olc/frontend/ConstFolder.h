@@ -17,10 +17,38 @@
 using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
+  // 符号表
+  SymTab<std::string, Value *> &symbolTable;
 public:
+  ConstFoldVisitor(SymTab<std::string, Value *> &symbolTable)
+      : symbolTable(symbolTable) {}
+
+  // 处理常量值,类似于:
+  // const int b = 10;
+  // int c = b;
+  virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
+    // 获取变量名
+    std::string varName = ctx->ID()->getText();
+    // 获取变量值, 若语义正确获得的应为常量全局变量.
+    ConstantValue *result = 
+        (ConstantValue *)((GlobalVariable *)symbolTable.lookup(varName))->getInitializer();
+    if (result) {
+      if (result->isInt()) {
+        result = new ConstantValue(result->getInt());
+      } else if (result->isFloat()) {
+        result = new ConstantValue(result->getFloat());
+      } else {
+        olc_unreachable("Invalid type for constant value");
+      }
+    } else {
+      olc_unreachable("Variable not found");
+    }
+    return result;
+  }
+
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
-    ConstantValue* result = nullptr;
+    ConstantValue *result = nullptr;
 
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
@@ -57,7 +85,7 @@ public:
 
   virtual std::any
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
-    ConstantValue* result = nullptr;
+    ConstantValue *result = nullptr;
 
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
@@ -124,8 +152,9 @@ public:
 
   virtual std::any
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
-    ConstantValue* result = nullptr;
-    ConstantValue* expr = std::any_cast<ConstantValue *>(visit(ctx->unaryExpr()));
+    ConstantValue *result = nullptr;
+    ConstantValue *expr =
+        std::any_cast<ConstantValue *>(visit(ctx->unaryExpr()));
 
     if (expr) {
       if (ctx->op->getText() == "+") {
@@ -137,7 +166,7 @@ public:
           result = new ConstantValue(-expr->getInt());
         } else if (expr->isFloat()) {
           result = new ConstantValue(-expr->getFloat());
-        } 
+        }
       } else {
         olc_unreachable("Unsupported unary operator");
       }

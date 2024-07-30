@@ -12,7 +12,8 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
-#include "ConstFolder.h"
+#include <olc/debug.h>
+#include <olc/frontend/ConstFolder.h>
 
 using namespace olc;
 
@@ -20,7 +21,7 @@ class ConstFoldVisitor;
 
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> symbolTable;
+  SymTab<std::string, Value *> &symbolTable;
   // IR Value 表
   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
   // 推导节点是否为左值
@@ -63,9 +64,11 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
 public:
-  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder)
+  CodeGenASTVisitor(
+      Module *module, ConstFoldVisitor &constFolder,
+      SymTab<std::string, Value *> &symbolTable)
       : curModule(module), curFunction(nullptr), constFolder(constFolder),
-        labelCnt(0) {}
+        symbolTable(symbolTable), labelCnt(0) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -75,32 +78,56 @@ public:
   //--------------------------------------------------------------------------
   // 声明部分
   //--------------------------------------------------------------------------
-  // 处理变量声明
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
-    auto *type = convertType(ctx->basicType->getText());
+    Type *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
 
     for (const auto &varDef : ctx->varDef()) {
       std::string varName = varDef->ID()->getText();
-      if (isGlobal) {
-        // 初始化全局变量的值
-        Constant *initializer = nullptr;
-        if (varDef->initVal()) {
-          initializer = std::any_cast<ConstantValue *>(
-              constFolder.visit(varDef->initVal()));
+      if (varDef->constExpr().size() > 0) {
+        size_t size = 1;
+        std::vector<int> dimSizes;
+        for (const auto &expr : varDef->constExpr()) {
+          int d =
+              std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt();
+          size *= d;
+          dimSizes.push_back(d);
         }
-        GlobalVariable *globalVar =
-            new GlobalVariable(type, varName, initializer);
-        curModule->addGlobal(globalVar);
-        symbolTable.insert(varName, globalVar);
+        Type *arrayType = ArrayType::get(type, size, dimSizes);
+        if (isGlobal) {
+          olc_unreachable("NYI");
+        } else {
+          // 局部变量分配
+          Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
+          symbolTable.insert(varName, allocaInst);
+          // 处理初始化表达式（如果有）
+          if (varDef->initVal()) {
+            Value *initVal = createRValue(varDef->initVal());
+            curBasicBlock->create<StoreInst>(initVal, allocaInst);
+          }
+        }
       } else {
-        // 局部变量分配
-        Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
-        symbolTable.insert(varName, allocaInst);
-        // 处理初始化表达式（如果有）
-        if (varDef->initVal()) {
-          Value *initVal = createRValue(varDef->initVal());
-          curBasicBlock->create<StoreInst>(initVal, allocaInst);
+        if (isGlobal) {
+          // 初始化全局变量的值
+          Constant *initializer = nullptr;
+          if (varDef->initVal()) {
+            initializer = std::any_cast<ConstantValue *>(
+                constFolder.visit(varDef->initVal()));
+            // 判断全局变量是否为常量
+          }
+          GlobalVariable *globalVar =
+              new GlobalVariable(type, varName, initializer);
+          curModule->addGlobal(globalVar);
+          symbolTable.insert(varName, globalVar);
+        } else {
+          // 局部变量分配
+          Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
+          symbolTable.insert(varName, allocaInst);
+          // 处理初始化表达式（如果有）
+          if (varDef->initVal()) {
+            Value *initVal = createRValue(varDef->initVal());
+            curBasicBlock->create<StoreInst>(initVal, allocaInst);
+          }
         }
       }
     }
@@ -117,6 +144,13 @@ public:
       valueMap[ctx] = createRValue(ctx->expr());
     } else {
       // TODO: 处理初始化列表
+      std::vector<Value *> initValues;
+      for (const auto &initVal : ctx->initVal()) {
+        visit(initVal);
+        initValues.push_back(valueMap.at(initVal));
+        // ...
+      }
+      // valueMap[ctx] =
       olc_unreachable("NYI");
     }
     return {};
