@@ -54,7 +54,20 @@ void AssemblyWriter::printFunc(Function *function) {
 
 void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
   os << basicBlock->label << ":\n";
-  // TODO: print pred and succ
+  if (!basicBlock->predecessors.empty()) {
+    os << "; prev:";
+    for (auto *pred : basicBlock->predecessors) {
+      os << " " << pred->label;
+    }
+    os << "\n";
+  }
+  if (!basicBlock->successors.empty()) {
+    os << "; next:";
+    for (auto *succ : basicBlock->successors) {
+      os << " " << succ->label;
+    }
+    os << "\n";
+  }
 
   for (auto *instr : basicBlock->instructions) {
     assert(instr->getType() && "must have type");
@@ -65,9 +78,11 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
 }
 
 constexpr char const *kInstTagToOpName[] = {
-    "add", "sub", "mul",  "div",    "mod", "lt",    "le",    "ge",  "gt",
-    "eq",  "ne",  "and",  "or",     "rsb", "br",    "jmp",   "ret", "getelementptr",
-    "ld",  "st",  "call", "alloca", "phi", "memop", "memphi"};
+    "add",   "sub", "mul",  "div",    "mod", "lt",
+    "le",    "ge",  "gt",   "eq",     "ne",  "and",
+    "or",    "rsb", "br",   "jmp",    "ret", "getelementptr",
+    "ld",    "st",  "call", "alloca", "phi", "memop",
+    "memphi"};
 
 void AssemblyWriter::printInstr(Instruction *instruction) {
   auto *opName = kInstTagToOpName

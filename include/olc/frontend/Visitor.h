@@ -253,6 +253,7 @@ public:
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
     // 获取条件
     auto *cond = createRValue(ctx->cond());
+    // 创建基本块
     BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
     btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
     if (ctx->stmt().size() == 2) {
@@ -260,6 +261,22 @@ public:
           new BasicBlock(curFunction, "bfalse" + std::to_string(labelCnt++));
     }
     end = new BasicBlock(curFunction, "end" + std::to_string(labelCnt++));
+
+    btrue->predecessors.push_back(curBasicBlock);
+    if (bfalse) {
+      bfalse->predecessors.push_back(curBasicBlock);
+    }
+    end->predecessors.push_back(btrue);
+    end->predecessors.push_back(bfalse ? bfalse : curBasicBlock);
+
+    curBasicBlock->successors.push_back(btrue);
+    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
+    btrue->successors.push_back(end);
+    if (bfalse) {
+      bfalse->successors.push_back(end);
+    }
+
+    // 创建指令
     curBasicBlock->create<BranchInst>(cond, btrue, bfalse ? bfalse : end);
 
     // btrue
@@ -276,6 +293,7 @@ public:
       curBasicBlock->create<JumpInst>(end);
     }
 
+    // end
     curFunction->addBasicBlock(end);
     curBasicBlock = end;
 
