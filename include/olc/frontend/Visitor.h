@@ -40,6 +40,8 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   int labelCnt;
   // 当前条件块(for continue) 当前结束块(for break)
   BasicBlock *curCondBB, *curEndBB;
+  // 是否提前退出基本块
+  bool earlyExit;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -72,7 +74,7 @@ public:
       Module *module, ConstFoldVisitor &constFolder,
       SymTab<std::string, Value *> &symbolTable)
       : curModule(module), curFunction(nullptr), constFolder(constFolder),
-        symbolTable(symbolTable), labelCnt(0) {}
+        symbolTable(symbolTable) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
@@ -83,6 +85,9 @@ public:
   // 声明部分
   //--------------------------------------------------------------------------
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
+    if (earlyExit)
+      return {};
+
     Type *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
 
@@ -165,6 +170,7 @@ public:
   //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
     labelCnt = 0;
+    earlyExit = false;
 
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
@@ -236,6 +242,9 @@ public:
 
   virtual std::any
   visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
     // 获取右值
     auto *rVal = createRValue(ctx->expr());
     // 创建指令
@@ -246,17 +255,25 @@ public:
 
   virtual std::any
   visitExprStmt(sysy2022Parser::ExprStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
     visit(ctx->expr());
     return {};
   }
 
   virtual std::any
   visitBlockStmt(sysy2022Parser::BlockStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
     visit(ctx->block());
     return {};
   }
 
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
     // 获取条件
     auto *condInst = createRValue(ctx->cond());
     // 创建基本块
@@ -268,35 +285,40 @@ public:
     }
     end = new BasicBlock(curFunction, "endif" + std::to_string(labelCnt++));
 
-    btrue->predecessors.push_back(curBasicBlock);
-    curBasicBlock->successors.push_back(btrue);
-
-    if (bfalse) {
-      bfalse->predecessors.push_back(curBasicBlock);
-      bfalse->successors.push_back(end);
-    }
-
-    end->predecessors.push_back(btrue);
-    btrue->successors.push_back(end);
-
-    end->predecessors.push_back(bfalse ? bfalse : curBasicBlock);
-    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
-
-    // 创建指令
+    // 创建指令 维护CFG
     curBasicBlock->create<BranchInst>(condInst, btrue, bfalse ? bfalse : end);
+    curBasicBlock->successors.push_back(btrue);
+    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
+    btrue->predecessors.push_back(curBasicBlock);
+    bfalse ? bfalse->predecessors.push_back(curBasicBlock)
+           : end->predecessors.push_back(curBasicBlock);
 
     // btrue
     curFunction->addBasicBlock(btrue);
     curBasicBlock = btrue;
     visit(ctx->stmt(0));
-    curBasicBlock->create<JumpInst>(end);
+    if (!earlyExit) {
+      // 创建指令 维护CFG
+      curBasicBlock->create<JumpInst>(end);
+      curBasicBlock->successors.push_back(end);
+      end->predecessors.push_back(btrue);
+    } else {
+      earlyExit = false;
+    }
 
     // bfalse
-    if (ctx->stmt().size() == 2) {
+    if (bfalse) {
       curFunction->addBasicBlock(bfalse);
       curBasicBlock = bfalse;
       visit(ctx->stmt(1));
-      curBasicBlock->create<JumpInst>(end);
+      if (!earlyExit) {
+        // 创建指令 维护CFG
+        curBasicBlock->create<JumpInst>(end);
+        curBasicBlock->successors.push_back(end);
+        end->predecessors.push_back(curBasicBlock);
+      } else {
+        earlyExit = false;
+      }
     }
 
     // end
@@ -308,6 +330,9 @@ public:
 
   virtual std::any
   visitWhileStmt(sysy2022Parser::WhileStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
     // 创建基本块
     BasicBlock *cond = nullptr, *loop = nullptr, *end = nullptr;
     cond = new BasicBlock(curFunction, "cond" + std::to_string(labelCnt++));
@@ -316,34 +341,35 @@ public:
     curCondBB = cond;
     curEndBB = end;
 
-    cond->predecessors.push_back(curBasicBlock);
-    curBasicBlock->successors.push_back(cond);
-
-    loop->predecessors.push_back(cond);
-    cond->successors.push_back(loop);
-
-    end->predecessors.push_back(cond);
-    cond->successors.push_back(end);
-
-    cond->predecessors.push_back(loop);
-    loop->successors.push_back(cond);
-
-    // 创建指令
+    // 创建指令 维护CFG
     curBasicBlock->create<JumpInst>(cond);
+    curBasicBlock->successors.push_back(cond);
+    cond->predecessors.push_back(curBasicBlock);
 
     // cond
     curFunction->addBasicBlock(cond);
     curBasicBlock = cond;
     // 获取条件
     auto *condInst = createRValue(ctx->cond());
-    // 创建指令
+    // 创建指令 维护CFG
     curBasicBlock->create<BranchInst>(condInst, loop, end);
+    curBasicBlock->successors.push_back(loop);
+    curBasicBlock->successors.push_back(end);
+    loop->predecessors.push_back(curBasicBlock);
+    end->predecessors.push_back(curBasicBlock);
 
     // loop
     curFunction->addBasicBlock(loop);
     curBasicBlock = loop;
     visit(ctx->stmt());
-    curBasicBlock->create<JumpInst>(cond);
+    if (!earlyExit) {
+      // 创建指令 维护CFG
+      curBasicBlock->create<JumpInst>(cond);
+      curBasicBlock->successors.push_back(cond);
+      cond->predecessors.push_back(curBasicBlock);
+    } else {
+      earlyExit = false;
+    }
 
     // end
     curFunction->addBasicBlock(end);
@@ -354,6 +380,10 @@ public:
 
   virtual std::any
   visitBreakStmt(sysy2022Parser::BreakStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
+    earlyExit = true;
     curBasicBlock->create<JumpInst>(curEndBB);
     if (find(
             curEndBB->predecessors.begin(), curEndBB->predecessors.end(),
@@ -366,6 +396,10 @@ public:
 
   virtual std::any
   visitContinueStmt(sysy2022Parser::ContinueStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
+    earlyExit = true;
     curBasicBlock->create<JumpInst>(curCondBB);
     if (find(
             curCondBB->predecessors.begin(), curCondBB->predecessors.end(),
@@ -378,6 +412,10 @@ public:
 
   virtual std::any
   visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
+    earlyExit = true;
     if (ctx->expr()) {
       // 获取子操作数
       auto *retVal = createRValue(ctx->expr());
