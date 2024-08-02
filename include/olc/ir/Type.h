@@ -100,7 +100,7 @@ class ArrayType : public Type {
   size_t size;
   std::vector<int> dimSizes;
 
-  ArrayType(Type *elemType, size_t size, std::vector<int> dimSizes)
+  ArrayType(Type *elemType, size_t size, std::vector<int> dimSizes = {})
       : Type(Tag::Array), elemType(elemType), size(size), dimSizes(dimSizes) {
     assert(size > 0 && "Array size must be greater than 0");
   }
@@ -108,7 +108,8 @@ class ArrayType : public Type {
 public:
   static bool classof(const Type *T) { return T->tag == Tag::Array; }
 
-  static ArrayType *get(Type *elemType, size_t size, std::vector<int> dimSizes);
+  static ArrayType *
+  get(Type *elemType, size_t size, std::vector<int> dimSizes = {});
 
   void print(std::ostream &os) const override {
     os << "[";
@@ -122,8 +123,7 @@ class FunctionType : public Type {
   Type *retType;
 
   FunctionType(Type *retType, std::vector<Type *> argTypes)
-      : Type(Tag::Function), argTypes(std::move(argTypes)),
-        retType(retType) {}
+      : Type(Tag::Function), argTypes(std::move(argTypes)), retType(retType) {}
 
 public:
   static bool classof(const Type *T) { return T->tag == Tag::Function; }
