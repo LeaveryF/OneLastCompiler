@@ -136,26 +136,12 @@ public:
                   }
                 };
             dfs(varDef->initVal(), size);
-            // std::vector<ConstantValue *> values =
-            //     std::any_cast<std::vector<ConstantValue *>>(
-            //         constFolder.visit(varDef->initVal()));
-            // while (values.size() < size) {
-            //   // TODO: Type
-            //   values.push_back(new ConstantValue(0));
-            // }
-            // // 初始化数组
-            // for (int i = 0; i < (int)size; ++i) {
-            //   debug(i);
-            //   Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-            //       allocaInst, new ConstantValue(i));
-            //   curBasicBlock->create<StoreInst>(values[i], elementPtr);
-            // }
-            for (auto v : values) {
-              debug(v->getInt());
+            // 初始化数组
+            for (int i = 0; i < (int)size; ++i) {
+              Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+                  allocaInst, new ConstantValue(i));
+              curBasicBlock->create<StoreInst>(values[i], elementPtr);
             }
-            // ConstantArray *initializer = new ConstantArray(arrayType,
-            // values); curBasicBlock->create<StoreInst>(initializer,
-            // allocaInst);
           }
         }
       } else {

@@ -27,9 +27,11 @@ struct Type {
   bool isIntegerTy() const { return tag == Tag::Integer; }
   bool isFloatTy() const { return tag == Tag::Float; }
   bool isPointerTy() const { return tag == Tag::Pointer; }
+  bool isArrayTy() const { return tag == Tag::Array; }
   bool isLabelTy() const { return tag == Tag::Label; }
   bool isFunctionTy() const { return tag == Tag::Function; }
   Type *getPointerEltType() const;
+  Type *getArrayEltType() const;
 };
 
 class VoidType : public Type {
@@ -110,6 +112,8 @@ public:
 
   static ArrayType *
   get(Type *elemType, size_t size, std::vector<int> dimSizes = {});
+
+  Type *getElementType() const { return elemType; }
 
   void print(std::ostream &os) const override {
     os << "[";

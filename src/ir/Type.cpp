@@ -27,6 +27,11 @@ Type *Type::getPointerEltType() const {
   return cast<PointerType>(this)->getPointeeType();
 }
 
+Type *Type::getArrayEltType() const {
+  assert(isArrayTy() && "Not an array type!");
+  return cast<ArrayType>(this)->getElementType();
+}
+
 VoidType *VoidType::get() {
   auto hash = static_cast<std::size_t>(Tag::Void);
   // no other combine
