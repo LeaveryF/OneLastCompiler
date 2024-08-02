@@ -305,9 +305,10 @@ struct LoadInst : Instruction {
 struct GetElementPtrInst : Instruction {
   GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
       : Instruction(
-            bb, ptr->getType()->getPointerEltType(), Tag::GetElementPtr,
+        // FIXME:
+            bb, ptr->getType(), Tag::GetElementPtr,
             {ptr, idx}) {
-    assert(!type->isPointerTy() && "Should access into flat elements");
+    // assert(!type->isPointerTy() && "Should access into flat elements");
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }

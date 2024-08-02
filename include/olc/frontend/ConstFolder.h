@@ -176,4 +176,18 @@ public:
 
     return result;
   }
+  virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
+    std::vector<ConstantValue *> values;
+    if (ctx->expr()) {
+      return visit(ctx->expr());
+    } else if (ctx->initVal().empty() || ctx->initVal(0)->expr()) {
+      for (auto *val : ctx->initVal()) {
+        ConstantValue *value = std::any_cast<ConstantValue *>(visit(val));
+        values.push_back(value);
+      }
+    } else {
+      //
+    }
+    return values;
+  }
 };

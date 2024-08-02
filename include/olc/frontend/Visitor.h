@@ -106,8 +106,22 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            Value *initVal = createRValue(varDef->initVal());
-            curBasicBlock->create<StoreInst>(initVal, allocaInst);
+            std::vector<ConstantValue *> values =
+                std::any_cast<std::vector<ConstantValue *>>(
+                    constFolder.visit(varDef->initVal()));
+            while (values.size() < size) {
+              // TODO: Type
+              values.push_back(new ConstantValue(0));
+            }
+            // // 初始化数组
+            // for (int i = 0; i < (int)size; ++i) {
+            //   debug(i);
+            //   Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+            //       allocaInst, new ConstantValue(i));
+            //   curBasicBlock->create<StoreInst>(values[i], elementPtr);
+            // }
+            ConstantArray *initializer = new ConstantArray(arrayType, values);
+            curBasicBlock->create<StoreInst>(initializer, allocaInst);
           }
         }
       } else {
@@ -148,13 +162,6 @@ public:
       valueMap[ctx] = createRValue(ctx->expr());
     } else {
       // TODO: 处理初始化列表
-      std::vector<Value *> initValues;
-      for (const auto &initVal : ctx->initVal()) {
-        visit(initVal);
-        initValues.push_back(valueMap.at(initVal));
-        // ...
-      }
-      // valueMap[ctx] =
       olc_unreachable("NYI");
     }
     return {};
