@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <vector>
@@ -106,13 +107,42 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            std::vector<ConstantValue *> values =
-                std::any_cast<std::vector<ConstantValue *>>(
-                    constFolder.visit(varDef->initVal()));
-            while (values.size() < size) {
-              // TODO: Type
-              values.push_back(new ConstantValue(0));
-            }
+            std::vector<ConstantValue *> values(size, nullptr);
+            int index = 0;
+
+            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
+                [&](sysy2022Parser::InitValContext *ctx, int len) {
+                  for (auto *val : ctx->initVal()) {
+                    if (val->expr()) {
+                      values[index++] = std::any_cast<ConstantValue *>(
+                          constFolder.visit(val->expr()));
+                    } else {
+                      int match = 1, n = dimSizes.size();
+                      for (int i = 1; i < n; i++) {
+                        if (index % (match * dimSizes[n - i]) == 0) {
+                          match *= dimSizes[n - i];
+                        } else {
+                          break;
+                        }
+                      }
+                      if (match == 1) {
+                        olc_unreachable("初始化列表错误");
+                      }
+                      dfs(val, index + match);
+                    }
+                  }
+                  while (index < len) {
+                    values[index++] = new ConstantValue(0);
+                  }
+                };
+            dfs(varDef->initVal(), size);
+            // std::vector<ConstantValue *> values =
+            //     std::any_cast<std::vector<ConstantValue *>>(
+            //         constFolder.visit(varDef->initVal()));
+            // while (values.size() < size) {
+            //   // TODO: Type
+            //   values.push_back(new ConstantValue(0));
+            // }
             // // 初始化数组
             // for (int i = 0; i < (int)size; ++i) {
             //   debug(i);
@@ -120,8 +150,12 @@ public:
             //       allocaInst, new ConstantValue(i));
             //   curBasicBlock->create<StoreInst>(values[i], elementPtr);
             // }
-            ConstantArray *initializer = new ConstantArray(arrayType, values);
-            curBasicBlock->create<StoreInst>(initializer, allocaInst);
+            for (auto v : values) {
+              debug(v->getInt());
+            }
+            // ConstantArray *initializer = new ConstantArray(arrayType,
+            // values); curBasicBlock->create<StoreInst>(initializer,
+            // allocaInst);
           }
         }
       } else {
