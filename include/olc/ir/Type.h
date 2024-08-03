@@ -115,6 +115,8 @@ public:
 
   Type *getElementType() const { return elemType; }
 
+  std::vector<int> getDimSizes() const { return dimSizes; }
+
   void print(std::ostream &os) const override {
     os << "[";
     elemType->print(os);

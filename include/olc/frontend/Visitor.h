@@ -90,6 +90,7 @@ public:
     for (const auto &varDef : ctx->varDef()) {
       std::string varName = varDef->ID()->getText();
       if (varDef->constExpr().size() > 0) {
+        /* 数组定义 */
         size_t size = 1;
         std::vector<int> dimSizes;
         for (const auto &expr : varDef->constExpr()) {
@@ -100,9 +101,51 @@ public:
         }
         Type *arrayType = ArrayType::get(type, size, dimSizes);
         if (isGlobal) {
-          olc_unreachable("NYI");
+          // 全局数组
+          // olc_unreachable("NYI");
+          Constant *initializer = nullptr;
+          if (varDef->initVal()) {
+            // initializer = std::any_cast<ConstantValue *>(
+            //     constFolder.visit(varDef->initVal()));
+            // 判断全局变量是否为常量
+            std::vector<Constant *> values(size, nullptr);
+            int index = 0;
+
+            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
+                [&](sysy2022Parser::InitValContext *ctx, int len) {
+                  for (auto *val : ctx->initVal()) {
+                    if (val->expr()) {
+                      values[index++] =
+                          cast<Constant>(std::any_cast<ConstantValue *>(
+                              constFolder.visit(val->expr())));
+                    } else {
+                      int match = 1, n = dimSizes.size();
+                      for (int i = 1; i < n; i++) {
+                        if (index % (match * dimSizes[n - i]) == 0) {
+                          match *= dimSizes[n - i];
+                        } else {
+                          break;
+                        }
+                      }
+                      if (match == 1) {
+                        olc_unreachable("初始化列表错误");
+                      }
+                      dfs(val, index + match);
+                    }
+                  }
+                  while (index < len) {
+                    values[index++] = new ConstantValue(0);
+                  }
+                };
+            dfs(varDef->initVal(), size);
+            initializer = cast<Constant>(new ConstantArray(arrayType, values));
+          }
+          GlobalVariable *globalVar =
+              new GlobalVariable(arrayType, varName, initializer);
+          curModule->addGlobal(globalVar);
+          symbolTable.insert(varName, globalVar);
         } else {
-          // 局部变量分配
+          // 局部数组分配
           Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
@@ -145,6 +188,7 @@ public:
           }
         }
       } else {
+        /* 变量定义 */
         if (isGlobal) {
           // 初始化全局变量的值
           Constant *initializer = nullptr;
@@ -535,8 +579,40 @@ public:
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     if (ctx->expr().size()) {
-      // TODO: 数组
-      olc_unreachable("NYI");
+      // FIXME: Global
+      AllocaInst *lVal =
+          cast<AllocaInst>(symbolTable.lookup(ctx->ID()->getText()));
+      if (!lVal) {
+        fprintf(
+            stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
+        olc_unreachable("error");
+      }
+      std::vector<int> dimSizes =
+          cast<ArrayType>(lVal->getAllocatedType())->getDimSizes();
+      std::vector<int> indices;
+      for (auto *expr : ctx->expr()) {
+        indices.push_back(
+            std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
+      }
+      debug(dimSizes);
+      debug(indices);
+      std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
+      lens.push_back(1);
+      std::reverse(lens.begin(), lens.end());
+      for (int i = 1; i < (int)lens.size(); i++) {
+        lens[i] *= lens[i - 1];
+      }
+      std::reverse(lens.begin(), lens.end());
+      debug(lens);
+      int index = 0;
+      for (int i = 0; i < (int)indices.size(); i++) {
+        index += indices[i] * lens[i];
+      } 
+      Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+          lVal, new ConstantValue(index));
+      valueMap[ctx] = elementPtr;
+      isLValueMap[ctx] = true;
+      return {};
     }
     auto *lVal = symbolTable.lookup(ctx->ID()->getText());
     if (!lVal) {
