@@ -48,13 +48,52 @@ public:
   std::string getImme(ConstantValue *val);
   std::string getReg();
   std::string getLabel(BasicBlock *bb);
-  // dispatch to the corresponding get- functions above
-  std::string getFromValue(Value *val) {
-    if (auto *cv = dyn_cast<ConstantValue>(val))
-      return getImme(cv);
-    assert(isa<Instruction>(val) && "NYI");
-    // else, use memory slot
-    return getStackOper(val);
+
+  struct NaiveAllocater {
+    int intCounter = 0;
+    int floatCounter = 0;
+    // ARMv7 limits
+    static constexpr int kMaxIntReg = 13; // remaining 3 for sp, lr, pc
+    static constexpr int kMaxFloatReg = 16;
+
+    std::string allocReg(Value *val) {
+      if (val->getType()->isIntegerTy()) {
+        if (intCounter < kMaxIntReg) {
+          return "r" + std::to_string(intCounter++);
+        } else {
+          olc_unreachable("Reg Limit Exceeded");
+        }
+      } else {
+        if (floatCounter < kMaxFloatReg) {
+          return "s" + std::to_string(floatCounter++);
+        } else {
+          olc_unreachable("Reg Limit Exceeded");
+        }
+      }
+    }
+
+    void reset() {
+      intCounter = 0;
+      floatCounter = 0;
+    }
+  } regAlloc;
+
+  void loadToSpecificReg(std::string reg, Value *val) {
+    if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+      printArmInstr("mov", {reg, getImme(constVal)});
+    } else {
+      printArmInstr("ldr", {reg, getStackOper(val)});
+    }
+  }
+
+  std::string loadToReg(Value *val) {
+    auto reg = regAlloc.allocReg(val);
+    loadToSpecificReg(reg, val);
+    return reg;
+  }
+
+  void storeRegToMemorySlot(std::string reg, Value *val) {
+    printArmInstr("str", {reg, getStackOper(val)});
   }
 };
 

@@ -35,8 +35,7 @@ void ArmWriter::printFunc(Function *function) {
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
       if (instr->tag == Value::Tag::Alloca ||
-          instr->tag >= Value::Tag::BeginBinOp &&
-              instr->tag <= Value::Tag::EndBinOp) {
+          instr->isDefVar() && instr->tag != Value::Tag::Load) {
         stackMap[instr] = stackSize; // TODO: array
         stackSize += 4;
       }
@@ -69,16 +68,13 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     // Do nothing for naive regalloc
     break;
   }
-  case Value::Tag::Store:
-    if (auto *arg = dyn_cast<Argument>(instr->getOperand(0))) {
-      printArmInstr("str", {getReg(), getStackOper(instr->getOperand(1))});
-    } else if (auto *constVal = dyn_cast<ConstantValue>(instr->getOperand(0))) {
-      printArmInstr("mov", {"r0", getImme(constVal)});
-      printArmInstr("str", {"r0", getStackOper(instr->getOperand(1))});
-    } else {
-      printArmInstr("str", {"r0", getStackOper(instr->getOperand(1))});
-    }
+  case Value::Tag::Store: {
+    // TODO: consider float register
+    auto *storeInst = cast<StoreInst>(instr);
+    storeRegToMemorySlot(
+        loadToReg(storeInst->getValue()), storeInst->getPointer());
     break;
+  }
   case Value::Tag::Add:
     printBinInstr("add", instr);
     break;
@@ -124,26 +120,29 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Jump:
     printArmInstr("b", {getLabel(cast<JumpInst>(instr)->getTargetBlock())});
     break;
-  case Value::Tag::Return:
-    if (cast<ReturnInst>(instr)->getNumOperands() == 1) {
-      printArmInstr(
-          "mov",
-          {"r0", getFromValue(cast<ReturnInst>(instr)->getReturnValue())});
-    }
+  case Value::Tag::Return: {
+    auto *retInst = cast<ReturnInst>(instr);
+    // if not ret void
+    if (retInst->getNumOperands() == 1)
+      loadToSpecificReg("r0", retInst->getReturnValue());
     printArmInstr("add", {"sp", "sp", "#" + std::to_string(stackSize)});
     printArmInstr("bx", {"lr"});
     break;
-  case Value::Tag::Call:
+  }
+  case Value::Tag::Call: {
     curReg = 0; // TODO: more params
     for (auto *arg : cast<CallInst>(instr)->getArgs()) {
       printArmInstr("str", {getReg(), getStackOper(arg)});
     }
     printArmInstr("bl", {cast<CallInst>(instr)->getCallee()->fnName});
     break;
+  }
   default:
     // olc_unreachable("NYI");
     break;
   }
+  // Drop all register values. We have already store the value to stack.
+  regAlloc.reset();
 }
 
 void ArmWriter::printArmInstr(
@@ -162,33 +161,15 @@ void ArmWriter::printArmInstr(
 }
 
 void ArmWriter::printBinInstr(const std::string &op, Instruction *instr) {
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getOperand(0))) {
-    printArmInstr("mov", {"r1", getImme(constVal)});
-  } else {
-    printArmInstr("ldr", {"r1", getStackOper(instr->getOperand(0))});
-  }
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getOperand(1))) {
-    printArmInstr("mov", {"r2", getImme(constVal)});
-  } else {
-    printArmInstr("ldr", {"r2", getStackOper(instr->getOperand(1))});
-  }
-  printArmInstr(op, {"r0", "r1", "r2"});
-  printArmInstr("str", {"r0", getStackOper(instr)});
+  auto reg_lhs = loadToReg(instr->getOperand(0));
+  auto reg_rhs = loadToReg(instr->getOperand(1));
+  printArmInstr(op, {reg_lhs, reg_lhs, reg_rhs});
+  storeRegToMemorySlot(reg_lhs, instr);
 }
 
 void ArmWriter::printCmpInstr(BinaryInst *instr) {
   // TODO: utilize Operand2 to handle immediate
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getLHS())) {
-    printArmInstr("mov", {"r1", getImme(constVal)});
-  } else {
-    printArmInstr("ldr", {"r1", getStackOper(instr->getLHS())});
-  }
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getRHS())) {
-    printArmInstr("mov", {"r2", getImme(constVal)});
-  } else {
-    printArmInstr("ldr", {"r2", getStackOper(instr->getRHS())});
-  }
-  printArmInstr("cmp", {"r1", "r2"});
+  printBinInstr("cmp", instr);
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
@@ -201,6 +182,7 @@ std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
   if (val->isInt()) {
     return "#" + std::to_string(val->getInt());
   } else {
+    // TODO: ensure it is correct
     return "#" + std::to_string(val->getFloat());
   }
 }
