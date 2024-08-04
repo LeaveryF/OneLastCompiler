@@ -167,15 +167,16 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            std::vector<ConstantValue *> values(size, nullptr);
+            std::vector<Value *> values(size, nullptr);
             int index = 0;
 
             std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
                 [&](sysy2022Parser::InitValContext *ctx, int len) {
                   for (auto *val : ctx->initVal()) {
                     if (val->expr()) {
-                      values[index++] = std::any_cast<ConstantValue *>(
-                          constFolder.visit(val->expr()));
+                      values[index++] = createRValue(val->expr());
+                      // values[index++] = std::any_cast<ConstantValue *>(
+                      //     constFolder.visit(val->expr()));
                     } else {
                       int match = 1, n = dimSizes.size();
                       for (int i = 1; i < n; i++) {
@@ -629,23 +630,27 @@ public:
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     if (ctx->expr().size()) {
-      // FIXME: Global
-      AllocaInst *lVal =
-          cast<AllocaInst>(symbolTable.lookup(ctx->ID()->getText()));
+      Value *lVal = symbolTable.lookup(ctx->ID()->getText());
       if (!lVal) {
         fprintf(
             stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
         olc_unreachable("error");
       }
-      std::vector<int> dimSizes =
-          cast<ArrayType>(lVal->getAllocatedType())->getDimSizes();
+      std::vector<int> dimSizes;
+      if (isa<AllocaInst>(lVal)) {
+        AllocaInst *inst = cast<AllocaInst>(lVal);
+        dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+      } else if (isa<GlobalVariable>(lVal)) {
+        GlobalVariable *inst = cast<GlobalVariable>(lVal);
+        dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+      } else {
+        olc_unreachable("Unexpected instruction type");
+      }
       std::vector<int> indices;
       for (auto *expr : ctx->expr()) {
         indices.push_back(
             std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
       }
-      debug(dimSizes);
-      debug(indices);
       std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
       lens.push_back(1);
       std::reverse(lens.begin(), lens.end());
@@ -653,7 +658,6 @@ public:
         lens[i] *= lens[i - 1];
       }
       std::reverse(lens.begin(), lens.end());
-      debug(lens);
       int index = 0;
       for (int i = 0; i < (int)indices.size(); i++) {
         index += indices[i] * lens[i];

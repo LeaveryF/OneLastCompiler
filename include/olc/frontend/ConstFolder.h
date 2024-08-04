@@ -19,6 +19,7 @@ using namespace olc;
 class ConstFoldVisitor : public sysy2022BaseVisitor {
   // 符号表
   SymTab<std::string, Value *> &symbolTable;
+
 public:
   ConstFoldVisitor(SymTab<std::string, Value *> &symbolTable)
       : symbolTable(symbolTable) {}
@@ -30,8 +31,10 @@ public:
     // 获取变量名
     std::string varName = ctx->ID()->getText();
     // 获取变量值, 若语义正确获得的应为常量全局变量.
-    ConstantValue *result = 
-        (ConstantValue *)((GlobalVariable *)symbolTable.lookup(varName))->getInitializer();
+    // FIXME: cast!
+    // TODO: array!
+    ConstantValue *result = cast<ConstantValue>(
+        cast<GlobalVariable>(symbolTable.lookup(varName))->getInitializer());
     if (result) {
       if (result->isInt()) {
         result = new ConstantValue(result->getInt());
