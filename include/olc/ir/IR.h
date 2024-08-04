@@ -85,6 +85,8 @@ struct Value {
 
   Type *getType() const { return type; };
 
+  bool isDefVar() const;
+
 protected:
   Type *type;
 };
@@ -196,6 +198,8 @@ struct Instruction : User {
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
   }
+
+  bool isPHI() const { return tag == Tag::Phi; }
 };
 
 struct BinaryInst : Instruction {
@@ -449,7 +453,16 @@ struct Module {
         return gv;
       }
     }
-    return nullptr;
+    olc_unreachable("Unknown global variable");
+  }
+
+  Function *getFunction(const std::string &name) const {
+    for (auto *fn : functions) {
+      if (fn->fnName == name) {
+        return fn;
+      }
+    }
+    olc_unreachable("Unknown function name");
   }
 };
 

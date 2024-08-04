@@ -2,6 +2,14 @@
 
 namespace olc {
 
+bool Value::isDefVar() const {
+  if (auto *inst = dyn_cast<Instruction>(this)) {
+    return !inst->getType()->isVoidTy();
+  } else {
+    return isa<Argument>(this);
+  }
+}
+
 void Value::addUse(User *user, int index) { uses.push_back(Use(user, index)); }
 
 void Value::removeUse(User *user, int index) {
