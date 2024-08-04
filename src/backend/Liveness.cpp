@@ -23,7 +23,8 @@ LivenessBlockInfo::LivenessBlockInfo(BasicBlock *block) : block(block) {
     if (inst->isDefVar())
       defValues.insert(inst);
     for (auto &&op : inst->operands) {
-      useValues.insert(op);
+      if (op->isDefVar())
+        useValues.insert(op);
     }
   }
 
@@ -131,6 +132,14 @@ void LivenessAnalysis::calcLiveIntervals() {
        blockIt != instOrdering.blockOrder.rend(); ++blockIt) {
     auto block = *blockIt;
     auto &blockInfo = blockInfoMap.at(block);
+    const auto beginID = inPoint(block->instructions.front());
+    const auto endID = inPoint(block->instructions.back());
+
+    for (auto *var : blockInfo.outValues) {
+      updateInterval(var, beginID);
+      updateInterval(var, endID);
+    }
+
     for (auto *inst : block->instructions) {
       assert(!inst->isPHI() && "NYI");
 
