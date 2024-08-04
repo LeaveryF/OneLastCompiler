@@ -50,7 +50,7 @@ public:
   std::string getLabel(BasicBlock *bb);
   // dispatch to the corresponding get- functions above
   std::string getFromValue(Value *val) {
-    if (auto *cv = cast<ConstantValue>(val))
+    if (auto *cv = dyn_cast<ConstantValue>(val))
       return getImme(cv);
     assert(isa<Instruction>(val) && "NYI");
     // else, use memory slot
