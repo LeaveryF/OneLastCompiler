@@ -1,7 +1,5 @@
 #include <olc/backend/ArmWriter.h>
 
-#include <algorithm>
-
 namespace olc {
 
 void ArmWriter::printModule(Module *module) {
@@ -11,6 +9,7 @@ void ArmWriter::printModule(Module *module) {
   }
 
   os << ".text\n";
+  os << ".global _start\n";
   for (auto &func : module->functions) {
     printFunc(func);
   }
@@ -42,6 +41,8 @@ void ArmWriter::printFunc(Function *function) {
       }
     }
   }
+  printArmInstr("push", {"{r11, lr}"});
+  printArmInstr("mov", {"r11", "sp"});
   printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
 
   paramCnt = 0;
@@ -131,7 +132,8 @@ void ArmWriter::printInstr(Instruction *instr) {
           "mov",
           {"r0", getStackOper(cast<ReturnInst>(instr)->getReturnValue())});
     }
-    printArmInstr("add", {"sp", "sp", "#" + std::to_string(stackSize)});
+    printArmInstr("mov", {"sp", "r11"});
+    printArmInstr("pop", {"{r11, lr}"});
     printArmInstr("bx", {"lr"});
     break;
   case Value::Tag::Call:
