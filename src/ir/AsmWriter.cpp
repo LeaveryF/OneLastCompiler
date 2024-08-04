@@ -78,11 +78,17 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
 }
 
 constexpr char const *kInstTagToOpName[] = {
-    "add",   "sub", "mul",  "div",    "mod", "lt",
-    "le",    "ge",  "gt",   "eq",     "ne",  "and",
-    "or",    "rsb", "br",   "jmp",    "ret", "getelementptr",
-    "ld",    "st",  "call", "alloca", "phi", "memop",
-    "memphi"};
+    "add", "sub", "mul",  "div",    "mod",
+    "lt",  "le",  "ge",   "gt",     "eq",
+    "ne",  "br",  "jmp",  "ret",    "getelementptr",
+    "ld",  "st",  "call", "alloca", "phi",
+    "i2f", "f2i"};
+
+static_assert(
+    sizeof(kInstTagToOpName) / sizeof(kInstTagToOpName[0]) ==
+        static_cast<int>(Value::Tag::EndInst) -
+            static_cast<int>(Value::Tag::BeginInst) + 1,
+    "kInstTagToOpName size mismatch");
 
 void AssemblyWriter::printInstr(Instruction *instruction) {
   auto *opName = kInstTagToOpName
