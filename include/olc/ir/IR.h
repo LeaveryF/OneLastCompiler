@@ -46,9 +46,6 @@ struct Value {
     Gt,
     Eq,
     Ne,
-    And,
-    Or,
-    Rsb,
     Branch,
     Jump,
     Return,
@@ -58,8 +55,6 @@ struct Value {
     Call,
     Alloca,
     Phi,
-    MemOp,
-    MemPhi,
     IntToFloat, // 新增
     FloatToInt, // 新增
 
@@ -67,9 +62,11 @@ struct Value {
     BeginConst = ConstValue,
     EndConst = Global,
     BeginInst = Add,
-    EndInst = MemPhi,
+    EndInst = FloatToInt,
     BeginBinOp = Add,
-    EndBinOp = Or,
+    EndBinOp = Ne,
+    BeginBooleanOp = Lt,
+    EndBooleanOp = Ne,
   } tag;
   Value(Tag tag, Type *type) : tag(tag), type(type) {}
 
@@ -82,6 +79,8 @@ struct Value {
   void replaceAllUseWith(Value *v);
 
   Type *getType() const { return type; };
+
+  bool isDefVar() const;
 
 protected:
   Type *type;
@@ -194,21 +193,36 @@ struct Instruction : User {
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
   }
+
+  bool isPHI() const { return tag == Tag::Phi; }
 };
 
 struct BinaryInst : Instruction {
   BinaryInst(BasicBlock *bb, Tag tag, Value *lhs, Value *rhs)
-      : Instruction(bb, lhs->getType(), tag, {lhs, rhs}) {
-    assert(tag >= Tag::Add && tag <= Tag::Or);
-    assert(lhs->getType() == rhs->getType() && "Type mismatch");
-  }
+      : Instruction(bb, inferType(tag, lhs, rhs), tag, {lhs, rhs}) {}
 
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginBinOp && V->tag <= Tag::EndBinOp;
   }
 
-  Value* getLHS() const { return getOperand(0); }
-  Value* getRHS() const { return getOperand(1); }
+  Value *getLHS() const { return getOperand(0); }
+  Value *getRHS() const { return getOperand(1); }
+
+  bool isCmpOp() const {
+    return tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp;
+  }
+
+private:
+  Type *inferType(Tag tag, Value *lhs, Value *rhs) {
+    assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
+    assert(lhs->getType() == rhs->getType() && "Type mismatch");
+    assert(
+        !lhs->getType()->isPointerTy() && "Pointers not allowed in binary op");
+    if (tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp)
+      // i32 type for bool
+      return IntegerType::get();
+    return lhs->getType();
+  }
 };
 
 struct CallInst : Instruction {
@@ -219,7 +233,7 @@ struct CallInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Call; }
 
-  Function* getCallee() const { return cast<Function>(getOperand(0)); }
+  Function *getCallee() const { return cast<Function>(getOperand(0)); }
 
   std::vector<Value *> getArgs() const {
     return std::vector<Value *>(operands.begin() + 1, operands.end());
@@ -234,9 +248,9 @@ struct BranchInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Branch; }
 
-  Value* getCondition() const { return getOperand(0); }
-  BasicBlock* getTrueBlock() const { return cast<BasicBlock>(getOperand(1)); }
-  BasicBlock* getFalseBlock() const { return cast<BasicBlock>(getOperand(2)); }
+  Value *getCondition() const { return getOperand(0); }
+  BasicBlock *getTrueBlock() const { return cast<BasicBlock>(getOperand(1)); }
+  BasicBlock *getFalseBlock() const { return cast<BasicBlock>(getOperand(2)); }
 };
 
 struct JumpInst : Instruction {
@@ -245,16 +259,18 @@ struct JumpInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Jump; }
 
-  BasicBlock* getTargetBlock() const { return cast<BasicBlock>(getOperand(0)); }
+  BasicBlock *getTargetBlock() const { return cast<BasicBlock>(getOperand(0)); }
 };
 
 struct ReturnInst : Instruction {
   ReturnInst(BasicBlock *bb, Value *val)
       : Instruction(bb, VoidType::get(), Tag::Return, {val}) {}
 
+  ReturnInst(BasicBlock *bb) : Instruction(bb, VoidType::get(), Tag::Return) {}
+
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
 
-  Value* getReturnValue() const { return getOperand(0); }
+  Value *getReturnValue() const { return getOperand(0); }
 };
 
 struct AllocaInst : Instruction {
@@ -263,12 +279,14 @@ struct AllocaInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 
-  // Type* getAllocatedType() const { return getType()->getPointerElementType(); }
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
 };
 
 struct StoreInst : Instruction {
-  StoreInst(BasicBlock *bb, Type *type, Value *val, Value *ptr)
-      : Instruction(bb, type, Tag::Store, {val, ptr}) {}
+  StoreInst(BasicBlock *bb, Value *val, Value *ptr)
+      : Instruction(bb, VoidType::get(), Tag::Store, {val, ptr}) {
+    assert(val->getType() == ptr->getType()->getPointerEltType());
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Store; }
 
@@ -277,8 +295,9 @@ struct StoreInst : Instruction {
 };
 
 struct LoadInst : Instruction {
-  LoadInst(BasicBlock *bb, Type *type, Value *ptr, bool isInt)
-      : Instruction(bb, type, Tag::Load, {ptr}) {}
+  LoadInst(BasicBlock *bb, Value *ptr)
+      : Instruction(bb, ptr->getType()->getPointerEltType(), Tag::Load, {ptr}) {
+  }
 
   static bool classof(const Value *V) { return V->tag == Tag::Load; }
 
@@ -286,17 +305,19 @@ struct LoadInst : Instruction {
 };
 
 struct GetElementPtrInst : Instruction {
-  GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
+  GetElementPtrInst(BasicBlock *bb, Value *ptr, ConstantValue *idx)
       : Instruction(
-            bb, ptr->getType()->getPointerEltType(), Tag::GetElementPtr,
-            {ptr, idx}) {
-    assert(!type->isPointerTy() && "Should access into flat elements");
+            bb,
+            PointerType::get(
+                ptr->getType()->getPointerEltType()->getArrayEltType()),
+            Tag::GetElementPtr, {ptr, cast<Value>(idx)}) {
+    // assert(!type->isPointerTy() && "Should access into flat elements");
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
 
-  Value* getPointerOperand() const { return getOperand(0); }
-  Value* getIndexOperand() const { return getOperand(1); }
+  Value *getPointer() const { return getOperand(0); }
+  ConstantValue *getIndex() const { return cast<ConstantValue>(getOperand(1)); }
 };
 
 struct IntToFloatInst : Instruction {
@@ -358,14 +379,23 @@ struct ConstantValue : Constant {
 };
 
 struct ConstantArray : Constant {
-  std::vector<ConstantValue *> values;
+  std::vector<Constant *> values;
+
+  template <typename T> Constant *constructConst(T &&val) {
+    using DecayT = std::decay_t<T>;
+    if constexpr (
+        std::is_same_v<DecayT, int> || std::is_same_v<DecayT, float>) {
+      return new ConstantValue(val);
+    } else {
+      return cast<Constant>(val);
+    }
+  }
 
   template <typename... Args>
   ConstantArray(Type *type, Args &&...args)
-      : ConstantArray(
-            type, std::vector<ConstantValue *>{new ConstantValue(args)...}) {}
+      : ConstantArray(type, std::vector<Constant *>{constructConst(args)...}) {}
 
-  ConstantArray(Type *type, std::vector<ConstantValue *> values)
+  ConstantArray(Type *type, std::vector<Constant *> values)
       : Constant(Tag::ConstArray, type), values(std::move(values)) {}
 
   void print(std::ostream &os) const override {
@@ -381,22 +411,29 @@ struct ConstantArray : Constant {
   static bool classof(const Value *V) { return V->tag == Tag::ConstArray; }
 };
 
-// TODO: model globals 
+// TODO: model globals
 // TODO: Constant, initval
-struct GlobalVariable : User {
-  std::variant<int, float> initialValue;
-  bool isConstant;
+struct GlobalVariable : Constant {
+  Constant *initializer;
 
+  // null initializer means zero init
   GlobalVariable(
-      Type *type, std::string const &name,
-      std::variant<int, float> initialValue, bool isConstant)
-      // TODO
-      : User(Tag::Global, type), initialValue(initialValue),
-        isConstant(isConstant), name(name) {}
+      Type *type, std::string const &name, Constant *initializer = nullptr)
+      : Constant(Tag::Global, PointerType::get(type)), initializer(initializer),
+        name(name) {}
 
   static bool classof(const Value *V) { return V->tag == Tag::Global; }
 
   std::string getName() const { return name; }
+
+  Constant *getInitializer() const { return initializer; }
+
+  Type *getAllocatedType() const { return getType()->getPointerEltType(); }
+
+  void print(std::ostream &os) const override { os << "@" << name; }
+
+  bool isInt() const { return getAllocatedType()->isIntegerTy(); }
+  bool isFloat() const { return getAllocatedType()->isFloatTy(); }
 
 private:
   std::string name;
@@ -415,7 +452,16 @@ struct Module {
         return gv;
       }
     }
-    return nullptr;
+    olc_unreachable("Unknown global variable");
+  }
+
+  Function *getFunction(const std::string &name) const {
+    for (auto *fn : functions) {
+      if (fn->fnName == name) {
+        return fn;
+      }
+    }
+    olc_unreachable("Unknown function name");
   }
 };
 

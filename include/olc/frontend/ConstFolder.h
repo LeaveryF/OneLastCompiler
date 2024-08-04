@@ -18,12 +18,40 @@ using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> symbolTable;
+  SymTab<std::string, Value *> &symbolTable;
 
 public:
+  ConstFoldVisitor(SymTab<std::string, Value *> &symbolTable)
+      : symbolTable(symbolTable) {}
+
+  // 处理常量值,类似于:
+  // const int b = 10;
+  // int c = b;
+  virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
+    // 获取变量名
+    std::string varName = ctx->ID()->getText();
+    // 获取变量值, 若语义正确获得的应为常量全局变量.
+    // FIXME: cast!
+    // TODO: array!
+    ConstantValue *result = cast<ConstantValue>(
+        cast<GlobalVariable>(symbolTable.lookup(varName))->getInitializer());
+    if (result) {
+      if (result->isInt()) {
+        result = new ConstantValue(result->getInt());
+      } else if (result->isFloat()) {
+        result = new ConstantValue(result->getFloat());
+      } else {
+        olc_unreachable("Invalid type for constant value");
+      }
+    } else {
+      olc_unreachable("Variable not found");
+    }
+    return result;
+  }
+
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
-    ConstantValue* result = nullptr;
+    ConstantValue *result = nullptr;
 
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
@@ -60,7 +88,7 @@ public:
 
   virtual std::any
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
-    ConstantValue* result = nullptr;
+    ConstantValue *result = nullptr;
 
     // 获取左操作数
     auto leftAny = visit(ctx->expr(0));
@@ -114,50 +142,22 @@ public:
   virtual std::any
   visitIntLiteral(sysy2022Parser::IntLiteralContext *ctx) override {
     std::string intStr = ctx->getText();
-    int base = 10;
-    if (intStr.substr(0, 2) == "0x" || intStr.substr(0, 2) == "0X") {
-      base = 16;
-    } else if (intStr.substr(0, 1) == "0") {
-      base = 8;
-    }
-    int result = std::stoi(intStr, nullptr, base);
+    int result = std::stoi(intStr, nullptr, 0);
     return new ConstantValue(result);
   }
 
   virtual std::any
   visitFloatLiteral(sysy2022Parser::FloatLiteralContext *ctx) override {
     std::string floatStr = ctx->getText();
-    float result = 0.0;
-    if (floatStr.substr(0, 2) == "0x" || floatStr.substr(0, 2) == "0X") {
-      std::string hexStr = "0x0", fracStr = "0x0", expStr = "";
-      int i = 2;
-      while (floatStr[i] != '.' && floatStr[i] != 'p' && floatStr[i] != 'P') {
-        hexStr += floatStr[i++];
-      }
-      if (floatStr[i] == '.') {
-        i++;
-      }
-      result += std::stoi(hexStr.c_str(), nullptr, 16);
-      while (floatStr[i] != 'p' && floatStr[i] != 'P') {
-        fracStr += floatStr[i++];
-      }
-      i++;
-      result +=
-          std::stoi(fracStr.c_str(), nullptr, 16) / pow(16, fracStr.size() - 3);
-      while (i < floatStr.size()) {
-        expStr += floatStr[i++];
-      }
-      result *= pow(2, std::stoi(expStr.c_str(), nullptr, 10));
-    } else {
-      result = std::stof(floatStr.c_str(), nullptr);
-    }
+    float result = std::stof(floatStr.c_str());
     return new ConstantValue(result);
   }
 
   virtual std::any
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
-    ConstantValue* result = nullptr;
-    ConstantValue* expr = std::any_cast<ConstantValue *>(visit(ctx->unaryExpr()));
+    ConstantValue *result = nullptr;
+    ConstantValue *expr =
+        std::any_cast<ConstantValue *>(visit(ctx->unaryExpr()));
 
     if (expr) {
       if (ctx->op->getText() == "+") {
@@ -169,7 +169,7 @@ public:
           result = new ConstantValue(-expr->getInt());
         } else if (expr->isFloat()) {
           result = new ConstantValue(-expr->getFloat());
-        } 
+        }
       } else {
         olc_unreachable("Unsupported unary operator");
       }

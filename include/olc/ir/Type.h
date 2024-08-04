@@ -27,9 +27,11 @@ struct Type {
   bool isIntegerTy() const { return tag == Tag::Integer; }
   bool isFloatTy() const { return tag == Tag::Float; }
   bool isPointerTy() const { return tag == Tag::Pointer; }
+  bool isArrayTy() const { return tag == Tag::Array; }
   bool isLabelTy() const { return tag == Tag::Label; }
   bool isFunctionTy() const { return tag == Tag::Function; }
   Type *getPointerEltType() const;
+  Type *getArrayEltType() const;
 };
 
 class VoidType : public Type {
@@ -98,16 +100,22 @@ public:
 class ArrayType : public Type {
   Type *elemType;
   size_t size;
+  std::vector<int> dimSizes;
 
-  ArrayType(Type *elemType, size_t size)
-      : Type(Tag::Array), elemType(elemType), size(size) {
+  ArrayType(Type *elemType, size_t size, std::vector<int> dimSizes = {})
+      : Type(Tag::Array), elemType(elemType), size(size), dimSizes(dimSizes) {
     assert(size > 0 && "Array size must be greater than 0");
   }
 
 public:
   static bool classof(const Type *T) { return T->tag == Tag::Array; }
 
-  static ArrayType *get(Type *elemType, size_t size);
+  static ArrayType *
+  get(Type *elemType, size_t size, std::vector<int> dimSizes = {});
+
+  Type *getElementType() const { return elemType; }
+
+  std::vector<int> getDimSizes() const { return dimSizes; }
 
   void print(std::ostream &os) const override {
     os << "[";
@@ -121,8 +129,7 @@ class FunctionType : public Type {
   Type *retType;
 
   FunctionType(Type *retType, std::vector<Type *> argTypes)
-      : Type(Tag::Function), argTypes(std::move(argTypes)),
-        retType(retType) {}
+      : Type(Tag::Function), argTypes(std::move(argTypes)), retType(retType) {}
 
 public:
   static bool classof(const Type *T) { return T->tag == Tag::Function; }

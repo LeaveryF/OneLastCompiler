@@ -12,6 +12,8 @@
 #include <sysy2022Parser.h>
 #include <sysy2022Visitor.h>
 
+#include <olc/backend/ArmWriter.h>
+#include <olc/backend/Liveness.h>
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
@@ -20,6 +22,7 @@ using namespace antlr4;
 using namespace olc;
 
 int main(int argc, const char *argv[]) {
+  SymTab<std::string, Value *> symbolTable;
   // 多文件批量测试
   // std::ifstream testin("../test/data.txt");
   // std::string fname;
@@ -61,12 +64,31 @@ int main(int argc, const char *argv[]) {
   // AssemblyWriter asmWriter{logout};
 
   auto *mod = new Module{};
-  ConstFoldVisitor constFolder;
-  CodeGenASTVisitor visitor(mod, constFolder);
+  ConstFoldVisitor constFolder(symbolTable);
+  CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(mod);
-  // }
+
+  ArmWriter armWriter{std::cout};
+  armWriter.printModule(mod);
+
+  LivenessAnalysis liveness;
+  liveness.runOnFunction(mod->getFunction("main"));
+
+  auto getValName = [&](Value *val) {
+    assert(val->isDefVar() && "Value is not a variable");
+    if (auto *inst = dyn_cast<Instruction>(val)) {
+      return asmWriter.nameManager[inst];
+    } else {
+      return cast<Argument>(val)->argName;
+    }
+  };
+
+  for (auto &&[val, intv] : liveness.liveIntervals) {
+    std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
+              << ", " << intv.second << "]\n";
+  }
 
   return 0;
 }

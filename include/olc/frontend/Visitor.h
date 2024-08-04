@@ -1,7 +1,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <vector>
@@ -12,7 +14,8 @@
 #include <olc/ir/IR.h>
 #include <olc/utils/symtab.h>
 
-#include "ConstFolder.h"
+#include <olc/debug.h>
+#include <olc/frontend/ConstFolder.h>
 
 using namespace olc;
 
@@ -20,9 +23,11 @@ class ConstFoldVisitor;
 
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> symbolTable;
-  // 结点返回值
+  SymTab<std::string, Value *> &symbolTable;
+  // IR Value 表
   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
+  // 推导节点是否为左值
+  std::map<antlr4::ParserRuleContext *, bool> isLValueMap;
   // 当前模块
   Module *curModule;
   // 当前函数
@@ -31,6 +36,14 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   BasicBlock *curBasicBlock;
 
   ConstFoldVisitor &constFolder;
+
+  // 标签计数
+  int labelCnt;
+  // 当前条件块(for continue) 当前结束块(for break)
+  // FIXME(!!!): Use stack for nested loops
+  BasicBlock *curCondBB, *curEndBB;
+  // 是否提前退出基本块
+  bool earlyExit;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -44,50 +57,177 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
     return nullptr;
   }
 
+  Value *createLValue(antlr4::ParserRuleContext *ctx) {
+    visit(ctx);
+    assert(isLValueMap[ctx] && "not a lvalue");
+    return valueMap.at(ctx);
+  }
+
+  Value *createRValue(antlr4::ParserRuleContext *ctx) {
+    visit(ctx);
+    if (isLValueMap[ctx]) {
+      return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
+    }
+    return valueMap.at(ctx);
+  }
+
+  Value *createCondValue(antlr4::ParserRuleContext *ctx) {
+    auto *expr = createRValue(ctx);
+    if (auto *binExpr = dyn_cast<BinaryInst>(expr);
+        binExpr && binExpr->isCmpOp()) {
+      return binExpr;
+    } else {
+      return curBasicBlock->create<BinaryInst>(
+          Value::Tag::Ne, expr, new ConstantValue(0));
+    }
+  }
+
 public:
-  CodeGenASTVisitor(Module *module, ConstFoldVisitor &constFolder) : curModule(module), curFunction(nullptr), constFolder(constFolder){}
+  CodeGenASTVisitor(
+      Module *module, ConstFoldVisitor &constFolder,
+      SymTab<std::string, Value *> &symbolTable)
+      : curModule(module), curFunction(nullptr), constFolder(constFolder),
+        symbolTable(symbolTable) {}
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  //  TODO: 全局变量声明
-  // 处理变量声明
+  //--------------------------------------------------------------------------
+  // 声明部分
+  //--------------------------------------------------------------------------
   virtual std::any visitVarDecl(sysy2022Parser::VarDeclContext *ctx) override {
-    auto *type = convertType(ctx->basicType->getText());
+    if (earlyExit)
+      return {};
+
+    Type *type = convertType(ctx->basicType->getText());
     bool isGlobal = (curFunction == nullptr); // 检查是否在全局作用域中
 
     for (const auto &varDef : ctx->varDef()) {
       std::string varName = varDef->ID()->getText();
-      if (isGlobal) {
-        // 初始化全局变量的值
-        std::variant<int, float> initialValue;
-        if (varDef->initVal()) {
-          auto initValAny = constFolder.visit(varDef->initVal());
-          auto *constInitVal = std::any_cast<ConstantValue *>(initValAny);
-          if (constInitVal->isInt()) {
-            initialValue = constInitVal->getInt();
-          } else if (constInitVal->isFloat()) {
-            initialValue = constInitVal->getFloat();
-          }
-        } else {
-          initialValue = (type == IntegerType::get())
-                             ? std::variant<int, float>{0}
-                             : std::variant<int, float>{0.0f};
+      if (varDef->constExpr().size() > 0) {
+        /* 数组定义 */
+        size_t size = 1;
+        std::vector<int> dimSizes;
+        for (const auto &expr : varDef->constExpr()) {
+          int d =
+              std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt();
+          size *= d;
+          dimSizes.push_back(d);
         }
-        GlobalVariable *globalVar =
-            new GlobalVariable(type, varName, initialValue, false);
-        curModule->addGlobal(globalVar);
+        Type *arrayType = ArrayType::get(type, size, dimSizes);
+        if (isGlobal) {
+          // 全局数组
+          // olc_unreachable("NYI");
+          Constant *initializer = nullptr;
+          if (varDef->initVal()) {
+            // initializer = std::any_cast<ConstantValue *>(
+            //     constFolder.visit(varDef->initVal()));
+            // 判断全局变量是否为常量
+            std::vector<Constant *> values(size, nullptr);
+            int index = 0;
+
+            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
+                [&](sysy2022Parser::InitValContext *ctx, int len) {
+                  for (auto *val : ctx->initVal()) {
+                    if (val->expr()) {
+                      values[index++] =
+                          cast<Constant>(std::any_cast<ConstantValue *>(
+                              constFolder.visit(val->expr())));
+                    } else {
+                      int match = 1, n = dimSizes.size();
+                      for (int i = 1; i < n; i++) {
+                        if (index % (match * dimSizes[n - i]) == 0) {
+                          match *= dimSizes[n - i];
+                        } else {
+                          break;
+                        }
+                      }
+                      if (match == 1) {
+                        olc_unreachable("初始化列表错误");
+                      }
+                      dfs(val, index + match);
+                    }
+                  }
+                  while (index < len) {
+                    values[index++] = new ConstantValue(0);
+                  }
+                };
+            dfs(varDef->initVal(), size);
+            initializer = cast<Constant>(new ConstantArray(arrayType, values));
+          }
+          GlobalVariable *globalVar =
+              new GlobalVariable(arrayType, varName, initializer);
+          curModule->addGlobal(globalVar);
+          symbolTable.insert(varName, globalVar);
+        } else {
+          // 局部数组分配
+          Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
+          symbolTable.insert(varName, allocaInst);
+          // 处理初始化表达式（如果有）
+          if (varDef->initVal()) {
+            std::vector<Value *> values(size, nullptr);
+            int index = 0;
+
+            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
+                [&](sysy2022Parser::InitValContext *ctx, int len) {
+                  for (auto *val : ctx->initVal()) {
+                    if (val->expr()) {
+                      values[index++] = createRValue(val->expr());
+                      // values[index++] = std::any_cast<ConstantValue *>(
+                      //     constFolder.visit(val->expr()));
+                    } else {
+                      int match = 1, n = dimSizes.size();
+                      for (int i = 1; i < n; i++) {
+                        if (index % (match * dimSizes[n - i]) == 0) {
+                          match *= dimSizes[n - i];
+                        } else {
+                          break;
+                        }
+                      }
+                      if (match == 1) {
+                        olc_unreachable("初始化列表错误");
+                      }
+                      dfs(val, index + match);
+                    }
+                  }
+                  while (index < len) {
+                    values[index++] = new ConstantValue(0);
+                  }
+                };
+            dfs(varDef->initVal(), size);
+            // 初始化数组
+            for (int i = 0; i < (int)size; ++i) {
+              Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+                  allocaInst, new ConstantValue(i));
+              curBasicBlock->create<StoreInst>(values[i], elementPtr);
+            }
+          }
+        }
       } else {
-        // 局部变量分配
-        Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
-        symbolTable.insert(varName, allocaInst);
-        // 处理初始化表达式（如果有）
-        if (varDef->initVal()) {
-          visit(varDef->initVal());
-          Value *initVal = valueMap.at(varDef->initVal());
-          curBasicBlock->create<StoreInst>(type, initVal, allocaInst);
+        /* 变量定义 */
+        if (isGlobal) {
+          // 初始化全局变量的值
+          Constant *initializer = nullptr;
+          if (varDef->initVal()) {
+            initializer = std::any_cast<ConstantValue *>(
+                constFolder.visit(varDef->initVal()));
+            // 判断全局变量是否为常量
+          }
+          GlobalVariable *globalVar =
+              new GlobalVariable(type, varName, initializer);
+          curModule->addGlobal(globalVar);
+          symbolTable.insert(varName, globalVar);
+        } else {
+          // 局部变量分配
+          Value *allocaInst = curBasicBlock->create<AllocaInst>(type);
+          symbolTable.insert(varName, allocaInst);
+          // 处理初始化表达式（如果有）
+          if (varDef->initVal()) {
+            Value *initVal = createRValue(varDef->initVal());
+            curBasicBlock->create<StoreInst>(initVal, allocaInst);
+          }
         }
       }
     }
@@ -95,15 +235,27 @@ public:
   }
 
   virtual std::any visitVarDef(sysy2022Parser::VarDefContext *ctx) override {
-    return visitChildren(ctx);
+    olc_unreachable("Never");
+    return {};
   }
 
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
-    return visitChildren(ctx);
+    if (ctx->expr()) {
+      valueMap[ctx] = createRValue(ctx->expr());
+    } else {
+      // TODO: 处理初始化列表
+      olc_unreachable("NYI");
+    }
+    return {};
   }
 
+  //--------------------------------------------------------------------------
   // 函数部分
+  //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
+    labelCnt = 0;
+    earlyExit = false;
+
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
     std::vector<Argument *> args;
@@ -119,20 +271,27 @@ public:
     curFunction = function;
     curBasicBlock = *function->basicBlocks.begin();
 
-    // 生成alloca指令
-
     // 函数名加到顶层符号表
     symbolTable.insert(ctx->ID()->getText(), function);
 
     // 进入新的作用域
     symbolTable.enterScope();
-    // 参数加到符号表中
+    // 参数加到符号表中 生成alloca和store指令
     for (const auto &arg : args) {
-      symbolTable.insert(arg->argName, arg);
+      Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
+      curBasicBlock->create<StoreInst>(arg, allocaInst);
+      symbolTable.insert(arg->argName, allocaInst);
     }
 
     // 处理函数体
     visit(ctx->block());
+
+    // void函数 增加ret指令
+    if (retType->isVoidTy() &&
+        (curBasicBlock->instructions.size() == 0 ||
+         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
+      curBasicBlock->create<ReturnInst>();
+    }
 
     // 退出作用域
     symbolTable.exitScope();
@@ -149,7 +308,9 @@ public:
     return {};
   }
 
+  //--------------------------------------------------------------------------
   // 语句部分
+  //--------------------------------------------------------------------------
   virtual std::any visitBlock(sysy2022Parser::BlockContext *ctx) override {
     // 进入新的作用域
     symbolTable.enterScope();
@@ -165,60 +326,201 @@ public:
 
   virtual std::any
   visitAssignStmt(sysy2022Parser::AssignStmtContext *ctx) override {
-    return visitChildren(ctx);
+    if (earlyExit)
+      return {};
+
+    // 获取右值
+    auto *rVal = createRValue(ctx->expr());
+    // 创建指令
+    auto *lVal = createLValue(ctx->lVal());
+    curBasicBlock->create<StoreInst>(rVal, lVal);
+    return {};
   }
 
   virtual std::any
   visitExprStmt(sysy2022Parser::ExprStmtContext *ctx) override {
-    return visitChildren(ctx);
+    if (earlyExit)
+      return {};
+
+    visit(ctx->expr());
+    return {};
   }
 
   virtual std::any
   visitBlockStmt(sysy2022Parser::BlockStmtContext *ctx) override {
-    return visitChildren(ctx);
+    if (earlyExit)
+      return {};
+    visit(ctx->block());
+    return {};
   }
 
   virtual std::any visitIfStmt(sysy2022Parser::IfStmtContext *ctx) override {
-    return visitChildren(ctx);
+    if (earlyExit)
+      return {};
+
+    // 获取条件
+    auto *condInst = createCondValue(ctx->cond());
+    // 创建基本块
+    BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
+    btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
+    if (ctx->stmt().size() == 2) {
+      bfalse =
+          new BasicBlock(curFunction, "bfalse" + std::to_string(labelCnt++));
+    }
+    end = new BasicBlock(curFunction, "endif" + std::to_string(labelCnt++));
+
+    // 创建指令 维护CFG
+    curBasicBlock->create<BranchInst>(condInst, btrue, bfalse ? bfalse : end);
+    curBasicBlock->successors.push_back(btrue);
+    curBasicBlock->successors.push_back(bfalse ? bfalse : end);
+    btrue->predecessors.push_back(curBasicBlock);
+    bfalse ? bfalse->predecessors.push_back(curBasicBlock)
+           : end->predecessors.push_back(curBasicBlock);
+
+    // btrue
+    curFunction->addBasicBlock(btrue);
+    curBasicBlock = btrue;
+    visit(ctx->stmt(0));
+    if (!earlyExit) {
+      // 创建指令 维护CFG
+      curBasicBlock->create<JumpInst>(end);
+      curBasicBlock->successors.push_back(end);
+      end->predecessors.push_back(btrue);
+    } else {
+      earlyExit = false;
+    }
+
+    // bfalse
+    if (bfalse) {
+      curFunction->addBasicBlock(bfalse);
+      curBasicBlock = bfalse;
+      visit(ctx->stmt(1));
+      if (!earlyExit) {
+        // 创建指令 维护CFG
+        curBasicBlock->create<JumpInst>(end);
+        curBasicBlock->successors.push_back(end);
+        end->predecessors.push_back(curBasicBlock);
+      } else {
+        earlyExit = false;
+      }
+    }
+
+    // end
+    curFunction->addBasicBlock(end);
+    curBasicBlock = end;
+
+    return {};
   }
 
   virtual std::any
   visitWhileStmt(sysy2022Parser::WhileStmtContext *ctx) override {
-    return visitChildren(ctx);
+    if (earlyExit)
+      return {};
+
+    // 创建基本块
+    BasicBlock *cond = nullptr, *loop = nullptr, *end = nullptr;
+    cond = new BasicBlock(curFunction, "cond" + std::to_string(labelCnt++));
+    loop = new BasicBlock(curFunction, "loop" + std::to_string(labelCnt++));
+    end = new BasicBlock(curFunction, "endloop" + std::to_string(labelCnt++));
+    curCondBB = cond;
+    curEndBB = end;
+
+    // 创建指令 维护CFG
+    curBasicBlock->create<JumpInst>(cond);
+    curBasicBlock->successors.push_back(cond);
+    cond->predecessors.push_back(curBasicBlock);
+
+    // cond
+    curFunction->addBasicBlock(cond);
+    curBasicBlock = cond;
+    // 获取条件
+    auto *condInst = createCondValue(ctx->cond());
+    // 创建指令 维护CFG
+    curBasicBlock->create<BranchInst>(condInst, loop, end);
+    curBasicBlock->successors.push_back(loop);
+    curBasicBlock->successors.push_back(end);
+    loop->predecessors.push_back(curBasicBlock);
+    end->predecessors.push_back(curBasicBlock);
+
+    // loop
+    curFunction->addBasicBlock(loop);
+    curBasicBlock = loop;
+    visit(ctx->stmt());
+    if (!earlyExit) {
+      // 创建指令 维护CFG
+      curBasicBlock->create<JumpInst>(cond);
+      curBasicBlock->successors.push_back(cond);
+      cond->predecessors.push_back(curBasicBlock);
+    } else {
+      earlyExit = false;
+    }
+
+    // end
+    curFunction->addBasicBlock(end);
+    curBasicBlock = end;
+
+    return {};
   }
 
   virtual std::any
   visitBreakStmt(sysy2022Parser::BreakStmtContext *ctx) override {
-    return visitChildren(ctx);
-  }
+    if (earlyExit)
+      return {};
 
-  virtual std::any
-  visitContinueStmt(sysy2022Parser::ContinueStmtContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any
-  visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
-    if (ctx->expr() != nullptr) {
-      // 获取子操作数
-      visit(ctx->expr());
-      auto *retVal = valueMap.at(ctx->expr());
-      // 创建指令
-      Value *result = curBasicBlock->create<ReturnInst>(retVal);
-    } else {
+    earlyExit = true;
+    curBasicBlock->create<JumpInst>(curEndBB);
+    if (find(
+            curEndBB->predecessors.begin(), curEndBB->predecessors.end(),
+            curBasicBlock) == curEndBB->predecessors.end()) {
+      curEndBB->predecessors.push_back(curBasicBlock);
+      curBasicBlock->successors.push_back(curEndBB);
     }
     return {};
   }
 
+  virtual std::any
+  visitContinueStmt(sysy2022Parser::ContinueStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
+    earlyExit = true;
+    curBasicBlock->create<JumpInst>(curCondBB);
+    if (find(
+            curCondBB->predecessors.begin(), curCondBB->predecessors.end(),
+            curBasicBlock) == curCondBB->predecessors.end()) {
+      curCondBB->predecessors.push_back(curBasicBlock);
+      curBasicBlock->successors.push_back(curCondBB);
+    }
+    return {};
+  }
+
+  virtual std::any
+  visitReturnStmt(sysy2022Parser::ReturnStmtContext *ctx) override {
+    if (earlyExit)
+      return {};
+
+    earlyExit = true;
+    if (ctx->expr()) {
+      // 获取子操作数
+      auto *retVal = createRValue(ctx->expr());
+      // 创建指令
+      Value *result = curBasicBlock->create<ReturnInst>(retVal);
+    } else {
+      Value *result = curBasicBlock->create<ReturnInst>();
+    }
+    return {};
+  }
+
+  //--------------------------------------------------------------------------
   // 表达式部分
+  //--------------------------------------------------------------------------
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
+    // TODO: 类型转换
     // 获取左操作数
-    visit(ctx->expr(0));
-    auto *left = valueMap.at(ctx->expr(0));
+    auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
-    visit(ctx->expr(1));
-    auto *right = valueMap.at(ctx->expr(1));
+    auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "+") {
@@ -235,11 +537,9 @@ public:
   virtual std::any
   visitMulDivModExpr(sysy2022Parser::MulDivModExprContext *ctx) override {
     // 获取左操作数
-    visit(ctx->expr(0));
-    auto *left = valueMap.at(ctx->expr(0));
+    auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
-    visit(ctx->expr(1));
-    auto *right = valueMap.at(ctx->expr(1));
+    auto *right = createRValue(ctx->expr(1));
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "*") {
@@ -257,8 +557,7 @@ public:
 
   virtual std::any
   visitSubUnaryExpr(sysy2022Parser::SubUnaryExprContext *ctx) override {
-    visit(ctx->unaryExpr());
-    valueMap[ctx] = valueMap.at(ctx->unaryExpr());
+    valueMap[ctx] = createRValue(ctx->unaryExpr());
     return {};
   }
 
@@ -266,26 +565,22 @@ public:
   visitParenExpr(sysy2022Parser::ParenExprContext *ctx) override {
     visit(ctx->expr());
     valueMap[ctx] = valueMap.at(ctx->expr());
+    isLValueMap[ctx] = isLValueMap[ctx->expr()];
     return {};
   }
 
   virtual std::any
   visitLValExpr(sysy2022Parser::LValExprContext *ctx) override {
-    return visitChildren(ctx);
+    visit(ctx->lVal());
+    valueMap[ctx] = valueMap.at(ctx->lVal());
+    isLValueMap[ctx] = isLValueMap[ctx->lVal()];
+    return {};
   }
 
   virtual std::any
   visitIntLiteral(sysy2022Parser::IntLiteralContext *ctx) override {
     std::string intStr = ctx->getText();
-    int base = 0;
-    if (intStr.substr(0, 2) == "0x" || intStr.substr(0, 2) == "0X") {
-      base = 16;
-    } else if (intStr.substr(0, 1) == "0") {
-      base = 8;
-    } else {
-      base = 10;
-    }
-    int result = std::stoi(intStr.c_str(), nullptr, base);
+    int result = std::stoi(intStr.c_str(), nullptr, 0);
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
@@ -293,86 +588,157 @@ public:
   virtual std::any
   visitFloatLiteral(sysy2022Parser::FloatLiteralContext *ctx) override {
     std::string floatStr = ctx->getText();
-    float result = 0.0;
-    if (floatStr.substr(0, 2) == "0x" || floatStr.substr(0, 2) == "0X") {
-      std::string hexStr = "0x0", fracStr = "0x0", expStr = "";
-      int i = 2;
-      while (floatStr[i] != '.' && floatStr[i] != 'p' && floatStr[i] != 'P') {
-        hexStr += floatStr[i++];
-      }
-      if (floatStr[i] == '.') {
-        i++;
-      }
-      result += std::stoi(hexStr.c_str(), nullptr, 16);
-      while (floatStr[i] != 'p' && floatStr[i] != 'P') {
-        fracStr += floatStr[i++];
-      }
-      i++;
-      result +=
-          std::stoi(fracStr.c_str(), nullptr, 16) / pow(16, fracStr.size() - 3);
-      while (i < floatStr.size()) {
-        expStr += floatStr[i++];
-      }
-      result *= pow(2, std::stoi(expStr.c_str(), nullptr, 10));
-    } else {
-      result = std::stof(floatStr.c_str(), nullptr);
-    }
+    float result = std::stof(floatStr.c_str());
     valueMap[ctx] = new ConstantValue(result);
     return {};
   }
 
   virtual std::any
   visitFuncCall(sysy2022Parser::FuncCallContext *ctx) override {
-    return visitChildren(ctx);
+    auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    std::vector<Value *> args;
+    // 处理实参
+    for (const auto &argCtx : ctx->expr()) {
+      auto *arg = createRValue(argCtx);
+      args.push_back(arg);
+    }
+    auto *callInst = curBasicBlock->create<CallInst>(callee, args);
+    valueMap[ctx] = callInst;
+    return {};
   }
 
   virtual std::any
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
-    // 获取子操作数
-    visit(ctx->unaryExpr());
     // 创建指令
     if (ctx->op->getText() == "+") {
       // do nothing
-      valueMap[ctx] = valueMap.at(ctx->unaryExpr());
+      valueMap[ctx] = createRValue(ctx->unaryExpr());
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
-      auto *subVal = valueMap.at(ctx->unaryExpr());
+      auto *subVal = createRValue(ctx->unaryExpr());
       Value *result = curBasicBlock->create<BinaryInst>(
           Value::Tag::Sub, new ConstantValue(0), subVal);
       valueMap[ctx] = result;
     } else {
-      // TODO: ! in cond expr
+      auto *subVal = createRValue(ctx->unaryExpr());
+      Value *result = curBasicBlock->create<BinaryInst>(
+          Value::Tag::Eq, subVal, new ConstantValue(0));
+      valueMap[ctx] = result;
     }
     return {};
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
-    return visitChildren(ctx);
+    if (ctx->expr().size()) {
+      Value *lVal = symbolTable.lookup(ctx->ID()->getText());
+      if (!lVal) {
+        fprintf(
+            stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
+        olc_unreachable("error");
+      }
+      std::vector<int> dimSizes;
+      if (isa<AllocaInst>(lVal)) {
+        AllocaInst *inst = cast<AllocaInst>(lVal);
+        dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+      } else if (isa<GlobalVariable>(lVal)) {
+        GlobalVariable *inst = cast<GlobalVariable>(lVal);
+        dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+      } else {
+        olc_unreachable("Unexpected instruction type");
+      }
+      std::vector<int> indices;
+      for (auto *expr : ctx->expr()) {
+        indices.push_back(
+            std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
+      }
+      std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
+      lens.push_back(1);
+      std::reverse(lens.begin(), lens.end());
+      for (int i = 1; i < (int)lens.size(); i++) {
+        lens[i] *= lens[i - 1];
+      }
+      std::reverse(lens.begin(), lens.end());
+      int index = 0;
+      for (int i = 0; i < (int)indices.size(); i++) {
+        index += indices[i] * lens[i];
+      }
+      Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+          lVal, new ConstantValue(index));
+      valueMap[ctx] = elementPtr;
+      isLValueMap[ctx] = true;
+      return {};
+    }
+    auto *lVal = symbolTable.lookup(ctx->ID()->getText());
+    if (!lVal) {
+      fprintf(stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
+      olc_unreachable("error");
+    }
+    valueMap[ctx] = lVal;
+    isLValueMap[ctx] = true;
+    return {};
   }
 
   virtual std::any visitEqExpr(sysy2022Parser::EqExprContext *ctx) override {
-    return visitChildren(ctx);
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::Undef;
+    if (ctx->op->getText() == "==") {
+      tag = Value::Tag::Eq;
+    } else {
+      tag = Value::Tag::Ne;
+    }
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any
   visitBinaryExpr(sysy2022Parser::BinaryExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *ctx) override {
-    return visitChildren(ctx);
+    valueMap[ctx] = createRValue(ctx->expr());
+    return {};
   }
 
   virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
-    return visitChildren(ctx);
+    // NOTE: Use createCondValue for LHS and RHS
+    olc_unreachable("short circuit logic NYI");
+    return {};
+  }
+
+  virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
+    // NOTE: Use createCondValue for LHS and RHS
+    olc_unreachable("short circuit logic NYI");
+    return {};
+  }
+
+  virtual std::any visitRelExpr(sysy2022Parser::RelExprContext *ctx) override {
+    // 获取左操作数
+    auto *left = createRValue(ctx->cond(0));
+    // 获取右操作数
+    auto *right = createRValue(ctx->cond(1));
+    // 创建指令
+    Value::Tag tag = Value::Tag::Undef;
+    if (ctx->op->getText() == "<") {
+      tag = Value::Tag::Lt;
+    } else if (ctx->op->getText() == ">") {
+      tag = Value::Tag::Gt;
+    } else if (ctx->op->getText() == "<=") {
+      tag = Value::Tag::Le;
+    } else {
+      tag = Value::Tag::Ge;
+    }
+    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
+    // 返回值
+    valueMap[ctx] = result;
+    return {};
   }
 
   virtual std::any
   visitConstExpr(sysy2022Parser::ConstExprContext *ctx) override {
-    return visitChildren(ctx);
+    valueMap[ctx] = createRValue(ctx->expr());
+    return {};
   }
 };

@@ -82,18 +82,27 @@ int main() {
   assert(isa<User>((Value *)retInst));
   assert(!isa<User>((Value *)op1));
 
-  // 新建函数
-  Function *newFunc = new Function{FloatType::get(), "newFunc", {}};
-  BasicBlock *newBlock = newFunc->getEntryBlock();
-  auto *val =
-      new ConstantArray(ArrayType::get(FloatType::get(), 2), 1.3f, 2.7f);
-  auto *instr = newBlock->create<BinaryInst>(Value::Tag::Div, val, val);
-  std::cout << "==========================\n\n";
-  mod->addFunction(newFunc);
-  asmWriter.printModule(mod);
-  // 测试重边 setOperand
-  instr->setOperand(1, op1);
-  asmWriter.printModule(mod);
+  // TODO: 重新测试Arraytype
+  // // 新建函数
+  // Function *newFunc = new Function{FloatType::get(), "newFunc", {}};
+  // BasicBlock *newBlock = newFunc->getEntryBlock();
+  // auto *val =
+  //     new ConstantArray(ArrayType::get(FloatType::get(), 2), 1.3f, 2.7f);
+  // auto *instr = newBlock->create<BinaryInst>(Value::Tag::Div, val, val);
+  // std::cout << "==========================\n\n";
+  // mod->addFunction(newFunc);
+  // asmWriter.printModule(mod);
+  // // 测试重边 setOperand
+  // instr->setOperand(1, op1);
+  // asmWriter.printModule(mod);
+
+  // ConstantArray
+  // We don't care about the type of the array, so we use VoidType
+  auto *nest1 = new ConstantArray{ArrayType::get(VoidType::get(), 3), 1, 2, 0};
+  auto *nest2 = new ConstantArray{ArrayType::get(VoidType::get(), 4), 4, 2, 3, 7};
+  auto *val = new ConstantArray{ArrayType::get(VoidType::get(), 2), nest1, nest2};
+
+  val->print(std::cout);
 
   return 0;
 }
