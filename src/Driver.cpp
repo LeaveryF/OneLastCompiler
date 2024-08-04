@@ -12,6 +12,7 @@
 #include <sysy2022Parser.h>
 #include <sysy2022Visitor.h>
 
+#include <olc/backend/ArmWriter.h>
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
@@ -67,6 +68,9 @@ int main(int argc, const char *argv[]) {
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(mod);
+
+  ArmWriter armWriter{std::cout};
+  armWriter.printModule(mod);
   // }
 
   return 0;
