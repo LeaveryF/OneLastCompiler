@@ -40,6 +40,7 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 标签计数
   int labelCnt;
   // 当前条件块(for continue) 当前结束块(for break)
+  // FIXME(!!!): Use stack for nested loops
   BasicBlock *curCondBB, *curEndBB;
   // 是否提前退出基本块
   bool earlyExit;
@@ -68,6 +69,17 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
       return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
     }
     return valueMap.at(ctx);
+  }
+
+  Value *createCondValue(antlr4::ParserRuleContext *ctx) {
+    auto *expr = createRValue(ctx);
+    if (auto *binExpr = dyn_cast<BinaryInst>(expr);
+        binExpr && binExpr->isCmpOp()) {
+      return binExpr;
+    } else {
+      return curBasicBlock->create<BinaryInst>(
+          Value::Tag::Ne, expr, new ConstantValue(0));
+    }
   }
 
 public:
@@ -346,7 +358,7 @@ public:
       return {};
 
     // 获取条件
-    auto *condInst = createRValue(ctx->cond());
+    auto *condInst = createCondValue(ctx->cond());
     // 创建基本块
     BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
     btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
@@ -421,7 +433,7 @@ public:
     curFunction->addBasicBlock(cond);
     curBasicBlock = cond;
     // 获取条件
-    auto *condInst = createRValue(ctx->cond());
+    auto *condInst = createCondValue(ctx->cond());
     // 创建指令 维护CFG
     curBasicBlock->create<BranchInst>(condInst, loop, end);
     curBasicBlock->successors.push_back(loop);
@@ -645,7 +657,7 @@ public:
       int index = 0;
       for (int i = 0; i < (int)indices.size(); i++) {
         index += indices[i] * lens[i];
-      } 
+      }
       Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
           lVal, new ConstantValue(index));
       valueMap[ctx] = elementPtr;
@@ -686,16 +698,15 @@ public:
     return {};
   }
 
+  virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
+    // NOTE: Use createCondValue for LHS and RHS
+    olc_unreachable("short circuit logic NYI");
+    return {};
+  }
+
   virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
-    // 获取左操作数
-    auto *left = createRValue(ctx->cond(0));
-    // 获取右操作数
-    auto *right = createRValue(ctx->cond(1));
-    // 创建指令
-    Value::Tag tag = Value::Tag::Or;
-    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
-    // 返回值
-    valueMap[ctx] = result;
+    // NOTE: Use createCondValue for LHS and RHS
+    olc_unreachable("short circuit logic NYI");
     return {};
   }
 
@@ -715,19 +726,6 @@ public:
     } else {
       tag = Value::Tag::Ge;
     }
-    Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
-    // 返回值
-    valueMap[ctx] = result;
-    return {};
-  }
-
-  virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
-    // 获取左操作数
-    auto *left = createRValue(ctx->cond(0));
-    // 获取右操作数
-    auto *right = createRValue(ctx->cond(1));
-    // 创建指令
-    Value::Tag tag = Value::Tag::And;
     Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
     // 返回值
     valueMap[ctx] = result;

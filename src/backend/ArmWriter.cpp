@@ -56,17 +56,19 @@ void ArmWriter::printFunc(Function *function) {
 
 void ArmWriter::printBasicBlock(BasicBlock *basicBlock) {
   os << getLabel(basicBlock) << ":\n";
-  for (auto *instr : basicBlock->instructions) {
-    printInstr(instr);
+  for (auto instr_it = basicBlock->instructions.begin();
+       instr_it != basicBlock->instructions.end(); ++instr_it) {
+    printInstr(instr_it);
   }
 }
 
-void ArmWriter::printInstr(Instruction *instr) {
+void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
+  auto &instr = *instr_it;
   switch (instr->tag) {
-  case Value::Tag::Load:
-    printArmInstr("ldr", {"r0", getStackOper(instr->getOperand(0))});
-    printArmInstr("str", {"r0", getStackOper(instr)});
+  case Value::Tag::Load: {
+    // Do nothing for naive regalloc
     break;
+  }
   case Value::Tag::Store:
     if (auto *arg = dyn_cast<Argument>(instr->getOperand(0))) {
       printArmInstr("str", {getReg(), getStackOper(instr->getOperand(1))});
@@ -93,35 +95,32 @@ void ArmWriter::printInstr(Instruction *instr) {
     // TODO: mod
     break;
   case Value::Tag::Lt:
-    printCmpInstr("lt", instr);
-    break;
   case Value::Tag::Le:
-    printCmpInstr("le", instr);
-    break;
   case Value::Tag::Ge:
-    printCmpInstr("ge", instr);
-    break;
   case Value::Tag::Gt:
-    printCmpInstr("gt", instr);
-    break;
   case Value::Tag::Eq:
-    printCmpInstr("eq", instr);
+  case Value::Tag::Ne: {
+    // Do nothing, the codegen is in BranchInst
+    for (auto &&[user, idx] : instr->uses) {
+      assert(isa<BranchInst>(user) && "Cmp result must be used by branch");
+    }
     break;
-  case Value::Tag::Ne:
-    printCmpInstr("ne", instr);
+  }
+  case Value::Tag::Branch: {
+    auto *brInst = cast<BranchInst>(instr);
+    auto *cond = dyn_cast<BinaryInst>(brInst->getCondition());
+    assert(cond && cond->isCmpOp() && "Branch condition must be a cmp op");
+    switch (cond->tag) {
+    case Value::Tag::Lt:
+      auto condTag = getCondTagStr(cond->tag);
+      printCmpInstr(cond);
+      printArmInstr(
+          "b" + condTag, {getLabel(cast<BranchInst>(instr)->getTrueBlock())});
+      printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
+      break;
+    }
     break;
-  case Value::Tag::And:
-    printBinInstr("and", instr);
-    break;
-  case Value::Tag::Or:
-    printBinInstr("or", instr);
-    break;
-  case Value::Tag::Branch:
-    printArmInstr(
-        "cmp", {getStackOper(cast<BranchInst>(instr)->getCondition()), "#0"});
-    printArmInstr("beq", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
-    printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
-    break;
+  }
   case Value::Tag::Jump:
     printArmInstr("b", {getLabel(cast<JumpInst>(instr)->getTargetBlock())});
     break;
@@ -129,7 +128,7 @@ void ArmWriter::printInstr(Instruction *instr) {
     if (cast<ReturnInst>(instr)->getNumOperands() == 1) {
       printArmInstr(
           "mov",
-          {"r0", getStackOper(cast<ReturnInst>(instr)->getReturnValue())});
+          {"r0", getFromValue(cast<ReturnInst>(instr)->getReturnValue())});
     }
     printArmInstr("add", {"sp", "sp", "#" + std::to_string(stackSize)});
     printArmInstr("bx", {"lr"});
@@ -173,28 +172,29 @@ void ArmWriter::printBinInstr(const std::string &op, Instruction *instr) {
   } else {
     printArmInstr("ldr", {"r2", getStackOper(instr->getOperand(1))});
   }
-  printArmInstr("mul", {"r0", "r1", "r2"});
+  printArmInstr(op, {"r0", "r1", "r2"});
   printArmInstr("str", {"r0", getStackOper(instr)});
 }
 
-void ArmWriter::printCmpInstr(const std::string &op, Instruction *instr) {
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getOperand(0))) {
+void ArmWriter::printCmpInstr(BinaryInst *instr) {
+  // TODO: utilize Operand2 to handle immediate
+  if (auto *constVal = dyn_cast<ConstantValue>(instr->getLHS())) {
     printArmInstr("mov", {"r1", getImme(constVal)});
   } else {
-    printArmInstr("ldr", {"r1", getStackOper(instr->getOperand(0))});
+    printArmInstr("ldr", {"r1", getStackOper(instr->getLHS())});
   }
-  if (auto *constVal = dyn_cast<ConstantValue>(instr->getOperand(1))) {
+  if (auto *constVal = dyn_cast<ConstantValue>(instr->getRHS())) {
     printArmInstr("mov", {"r2", getImme(constVal)});
   } else {
-    printArmInstr("ldr", {"r2", getStackOper(instr->getOperand(1))});
+    printArmInstr("ldr", {"r2", getStackOper(instr->getRHS())});
   }
   printArmInstr("cmp", {"r1", "r2"});
-  printArmInstr("mov" + op, {"r0", "#1"});
-  printArmInstr("str", {"r0", getStackOper(instr)});
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
-  return "[sp, #" + std::to_string(stackMap[val]) + "]";
+  if (auto *ld = dyn_cast<LoadInst>(val))
+    val = ld->getPointer();
+  return "[sp, #" + std::to_string(stackMap.at(val)) + "]";
 }
 
 std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
