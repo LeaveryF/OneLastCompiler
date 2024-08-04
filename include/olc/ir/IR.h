@@ -46,9 +46,6 @@ struct Value {
     Gt,
     Eq,
     Ne,
-    And,
-    Or,
-    Rsb,
     Branch,
     Jump,
     Return,
@@ -58,8 +55,6 @@ struct Value {
     Call,
     Alloca,
     Phi,
-    MemOp,
-    MemPhi,
     IntToFloat, // 新增
     FloatToInt, // 新增
 
@@ -67,11 +62,11 @@ struct Value {
     BeginConst = ConstValue,
     EndConst = Global,
     BeginInst = Add,
-    EndInst = MemPhi,
+    EndInst = FloatToInt,
     BeginBinOp = Add,
-    EndBinOp = Or,
+    EndBinOp = Ne,
     BeginBooleanOp = Lt,
-    EndBooleanOp = Or,
+    EndBooleanOp = Ne,
   } tag;
   Value(Tag tag, Type *type) : tag(tag), type(type) {}
 
@@ -212,6 +207,10 @@ struct BinaryInst : Instruction {
 
   Value *getLHS() const { return getOperand(0); }
   Value *getRHS() const { return getOperand(1); }
+
+  bool isCmpOp() const {
+    return tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp;
+  }
 
 private:
   Type *inferType(Tag tag, Value *lhs, Value *rhs) {
