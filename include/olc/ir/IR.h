@@ -85,6 +85,8 @@ struct Value {
 
   Type *getType() const { return type; };
 
+  bool isDefVar() const;
+
 protected:
   Type *type;
 };
@@ -196,6 +198,8 @@ struct Instruction : User {
   static bool classof(const Value *V) {
     return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
   }
+
+  bool isPHI() const { return tag == Tag::Phi; }
 };
 
 struct BinaryInst : Instruction {
@@ -214,8 +218,7 @@ private:
     assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
     assert(lhs->getType() == rhs->getType() && "Type mismatch");
     assert(
-        !lhs->getType()->isPointerTy() &&
-        "Pointers not allowed in binary op");
+        !lhs->getType()->isPointerTy() && "Pointers not allowed in binary op");
     if (tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp)
       // i32 type for bool
       return IntegerType::get();
@@ -305,9 +308,11 @@ struct LoadInst : Instruction {
 struct GetElementPtrInst : Instruction {
   GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
       : Instruction(
-            bb, ptr->getType()->getPointerEltType(), Tag::GetElementPtr,
-            {ptr, idx}) {
-    assert(!type->isPointerTy() && "Should access into flat elements");
+            bb,
+            PointerType::get(
+                ptr->getType()->getPointerEltType()->getArrayEltType()),
+            Tag::GetElementPtr, {ptr, idx}) {
+    // assert(!type->isPointerTy() && "Should access into flat elements");
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
@@ -375,14 +380,23 @@ struct ConstantValue : Constant {
 };
 
 struct ConstantArray : Constant {
-  std::vector<ConstantValue *> values;
+  std::vector<Constant *> values;
+
+  template <typename T> Constant *constructConst(T &&val) {
+    using DecayT = std::decay_t<T>;
+    if constexpr (
+        std::is_same_v<DecayT, int> || std::is_same_v<DecayT, float>) {
+      return new ConstantValue(val);
+    } else {
+      return cast<Constant>(val);
+    }
+  }
 
   template <typename... Args>
   ConstantArray(Type *type, Args &&...args)
-      : ConstantArray(
-            type, std::vector<ConstantValue *>{new ConstantValue(args)...}) {}
+      : ConstantArray(type, std::vector<Constant *>{constructConst(args)...}) {}
 
-  ConstantArray(Type *type, std::vector<ConstantValue *> values)
+  ConstantArray(Type *type, std::vector<Constant *> values)
       : Constant(Tag::ConstArray, type), values(std::move(values)) {}
 
   void print(std::ostream &os) const override {
@@ -439,7 +453,16 @@ struct Module {
         return gv;
       }
     }
-    return nullptr;
+    olc_unreachable("Unknown global variable");
+  }
+
+  Function *getFunction(const std::string &name) const {
+    for (auto *fn : functions) {
+      if (fn->fnName == name) {
+        return fn;
+      }
+    }
+    olc_unreachable("Unknown function name");
   }
 };
 

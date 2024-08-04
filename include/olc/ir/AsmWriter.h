@@ -6,7 +6,7 @@
 
 namespace olc {
 
-class AssemblyWriter {
+struct AssemblyWriter {
   std::ostream &os;
 
   class NameManager {
@@ -29,7 +29,6 @@ class AssemblyWriter {
     }
   } nameManager;
 
-public:
   AssemblyWriter(std::ostream &os) : os(os) {}
 
   void printModule(Module *);

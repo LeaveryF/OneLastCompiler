@@ -13,6 +13,7 @@
 #include <sysy2022Visitor.h>
 
 #include <olc/backend/ArmWriter.h>
+#include <olc/backend/Liveness.h>
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
@@ -71,7 +72,23 @@ int main(int argc, const char *argv[]) {
 
   ArmWriter armWriter{std::cout};
   armWriter.printModule(mod);
-  // }
+
+  LivenessAnalysis liveness;
+  liveness.runOnFunction(mod->getFunction("main"));
+
+  auto getValName = [&](Value *val) {
+    assert(val->isDefVar() && "Value is not a variable");
+    if (auto *inst = dyn_cast<Instruction>(val)) {
+      return asmWriter.nameManager[inst];
+    } else {
+      return cast<Argument>(val)->argName;
+    }
+  };
+
+  for (auto &&[val, intv] : liveness.liveIntervals) {
+    std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
+              << ", " << intv.second << "]\n";
+  }
 
   return 0;
 }
