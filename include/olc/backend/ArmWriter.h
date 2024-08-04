@@ -57,15 +57,15 @@ public:
     static constexpr int kMaxFloatReg = 16;
 
     std::string allocReg(Value *val) {
-      if (val->getType()->isIntegerTy()) {
-        if (intCounter < kMaxIntReg) {
-          return "r" + std::to_string(intCounter++);
+      if (val->getType()->isFloatTy()) {
+        if (floatCounter < kMaxFloatReg) {
+          return "s" + std::to_string(floatCounter++);
         } else {
           olc_unreachable("Reg Limit Exceeded");
         }
       } else {
-        if (floatCounter < kMaxFloatReg) {
-          return "s" + std::to_string(floatCounter++);
+        if (intCounter < kMaxIntReg) {
+          return "r" + std::to_string(intCounter++);
         } else {
           olc_unreachable("Reg Limit Exceeded");
         }

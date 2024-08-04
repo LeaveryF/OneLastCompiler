@@ -305,19 +305,19 @@ struct LoadInst : Instruction {
 };
 
 struct GetElementPtrInst : Instruction {
-  GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
+  GetElementPtrInst(BasicBlock *bb, Value *ptr, ConstantValue *idx)
       : Instruction(
             bb,
             PointerType::get(
                 ptr->getType()->getPointerEltType()->getArrayEltType()),
-            Tag::GetElementPtr, {ptr, idx}) {
+            Tag::GetElementPtr, {ptr, cast<Value>(idx)}) {
     // assert(!type->isPointerTy() && "Should access into flat elements");
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
 
-  Value *getPointerOperand() const { return getOperand(0); }
-  Value *getIndexOperand() const { return getOperand(1); }
+  Value *getPointer() const { return getOperand(0); }
+  ConstantValue *getIndex() const { return cast<ConstantValue>(getOperand(1)); }
 };
 
 struct IntToFloatInst : Instruction {

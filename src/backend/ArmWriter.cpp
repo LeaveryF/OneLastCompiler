@@ -64,15 +64,25 @@ void ArmWriter::printBasicBlock(BasicBlock *basicBlock) {
 void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   auto &instr = *instr_it;
   switch (instr->tag) {
+  case Value::Tag::Alloca:
   case Value::Tag::Load: {
     // Do nothing for naive regalloc
+    break;
+  }
+  case Value::Tag::GetElementPtr: {
+    auto *gep = cast<GetElementPtrInst>(instr);
+    auto reg_ptr = loadToReg(gep->getPointer());
+    auto reg_offset = getImme(gep->getIndex());
+    printArmInstr("add", {reg_ptr, reg_ptr, reg_offset});
+    storeRegToMemorySlot(reg_ptr, instr);
     break;
   }
   case Value::Tag::Store: {
     // TODO: consider float register
     auto *storeInst = cast<StoreInst>(instr);
-    storeRegToMemorySlot(
-        loadToReg(storeInst->getValue()), storeInst->getPointer());
+    auto reg_val = loadToReg(storeInst->getValue());
+    auto reg_ptr = loadToReg(storeInst->getPointer());
+    printArmInstr("str", {reg_val, "[" + reg_ptr + "]"});
     break;
   }
   case Value::Tag::Add:
@@ -138,7 +148,9 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     break;
   }
   default:
-    // olc_unreachable("NYI");
+    std::cerr << "NYI Instruction tag: " << static_cast<int>(instr->tag)
+              << "\n";
+    olc_unreachable("NYI");
     break;
   }
   // Drop all register values. We have already store the value to stack.
