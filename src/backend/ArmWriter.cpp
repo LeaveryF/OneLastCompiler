@@ -102,7 +102,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     } else {
       reg_offset = loadToReg(gep->getIndex());
     }
-    printArmInstr("add", {reg_ptr, reg_ptr, reg_offset});
+    printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
     storeRegToMemorySlot(reg_ptr, instr);
     break;
   }
