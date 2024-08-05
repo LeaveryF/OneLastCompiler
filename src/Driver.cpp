@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include <antlr4-runtime.h>
 #include <sysy2022Lexer.h>
@@ -56,8 +57,7 @@ int main(int argc, const char *argv[]) {
   sysy2022Parser parser(&tokens);
   sysy2022Parser::CompUnitContext *tree = parser.compUnit();
 
-  // 标准输出
-  AssemblyWriter asmWriter{std::cout};
+  AssemblyWriter asmWriter{std::cerr};
 
   // 输出到logs.txt
   // AssemblyWriter asmWriter{logout};
@@ -70,25 +70,30 @@ int main(int argc, const char *argv[]) {
 
   asmWriter.printModule(mod);
 
-  ArmWriter armWriter{std::cout};
+  std::stringstream ss;
+  ArmWriter armWriter{ss};
   armWriter.printModule(mod);
 
-  LivenessAnalysis liveness;
-  liveness.runOnFunction(mod->getFunction("main"));
+  std::cout << ss.str();
+  std::cerr << ss.str();
+  std::cerr << "============\n";
 
-  auto getValName = [&](Value *val) {
-    assert(val->isDefVar() && "Value is not a variable");
-    if (auto *inst = dyn_cast<Instruction>(val)) {
-      return asmWriter.nameManager[inst];
-    } else {
-      return cast<Argument>(val)->argName;
-    }
-  };
+  // LivenessAnalysis liveness;
+  // liveness.runOnFunction(mod->getFunction("main"));
 
-  for (auto &&[val, intv] : liveness.liveIntervals) {
-    std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
-              << ", " << intv.second << "]\n";
-  }
+  // auto getValName = [&](Value *val) {
+  //   assert(val->isDefVar() && "Value is not a variable");
+  //   if (auto *inst = dyn_cast<Instruction>(val)) {
+  //     return asmWriter.nameManager[inst];
+  //   } else {
+  //     return cast<Argument>(val)->argName;
+  //   }
+  // };
+
+  // for (auto &&[val, intv] : liveness.liveIntervals) {
+  //   std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
+  //             << ", " << intv.second << "]\n";
+  // }
 
   return 0;
 }
