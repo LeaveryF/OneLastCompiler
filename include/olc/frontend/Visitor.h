@@ -302,11 +302,15 @@ public:
     // 处理形参
     for (const auto &param : ctx->funcFParam()) {
       auto *type = convertType(param->basicType->getText());
-      args.push_back(new Argument{type, param->ID()->getText()});
       argShapes.push_back({});
       for (auto *dim : param->expr()) {
         argShapes.back().push_back(constFolder.resolveInt(dim));
+        type = ArrayType::get(type, argShapes.back().back());
       }
+      if (param->expr().size() > 0) {
+        type = PointerType::get(type);
+      }
+      args.push_back(new Argument{type, param->ID()->getText()});
     }
     // 加到module中
     Function *function = new Function(retType, ctx->ID()->getText(), args);
@@ -322,9 +326,15 @@ public:
     // 参数加到符号表中 生成alloca和store指令
     for (unsigned i = 0; i < args.size(); i++) {
       auto &arg = args[i];
-      Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
-      curBasicBlock->create<StoreInst>(arg, allocaInst);
-      symbolTable.insert(arg->argName, allocaInst, argShapes[i]);
+      if (argShapes[i].empty()) {
+        Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
+        curBasicBlock->create<StoreInst>(arg, allocaInst);
+        symbolTable.insert(arg->argName, allocaInst, argShapes[i]);
+      } else {
+        // 数组参数
+        argShapes[i].insert(argShapes[i].begin(), 0);
+        symbolTable.insert(arg->argName, arg, argShapes[i]);
+      }
     }
 
     // 处理函数体
@@ -675,7 +685,7 @@ public:
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     auto varName = ctx->ID()->getText();
     Value *lVal = symbolTable.lookup(varName);
-    std::vector<int> dimSizes = symbolTable.lookupShape(varName);
+    std::vector<int> shape = symbolTable.lookupShape(varName);
 
     if (!isa<GlobalVariable>(lVal) && isa<Constant>(lVal)) {
       valueMap[ctx] = constFolder.resolve(ctx);
@@ -683,28 +693,35 @@ public:
       return {};
     }
 
-    if (ctx->expr().empty()) {
+    if (shape.empty() && ctx->expr().empty()) {
       valueMap[ctx] = lVal;
       isLValueMap[ctx] = true;
       return {};
     }
 
-    std::vector<int> indices = constFolder.resolveIntList(ctx->expr());
-    std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
-    lens.push_back(1);
-    std::reverse(lens.begin(), lens.end());
-    for (int i = 1; i < (int)lens.size(); i++) {
-      lens[i] *= lens[i - 1];
+    std::vector<Value *> indices;
+    for (auto *expr : ctx->expr()) {
+      indices.push_back(createRValue(expr));
     }
-    std::reverse(lens.begin(), lens.end());
-    int index = 0;
-    for (int i = 0; i < (int)indices.size(); i++) {
-      index += indices[i] * lens[i];
+    Value *offset = new ConstantValue(0);
+    for (int i = indices.size(); i--;) {
+      int stride = 1;
+      for (int j = i + 1; j < shape.size(); j++) {
+        stride *= shape[j];
+      }
+      offset = curBasicBlock->create<BinaryInst>(
+          Value::Tag::Add,
+          curBasicBlock->create<BinaryInst>(
+              Value::Tag::Mul, indices[i], new ConstantValue(stride)),
+          offset);
     }
-    Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-        lVal, new ConstantValue(index));
+    Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(lVal, offset);
     valueMap[ctx] = elementPtr;
-    isLValueMap[ctx] = true;
+    if (indices.size() == shape.size()) {
+      isLValueMap[ctx] = true;
+    } else {
+      isLValueMap[ctx] = false;
+    }
     return {};
   }
 
