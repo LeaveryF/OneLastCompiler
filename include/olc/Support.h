@@ -7,7 +7,7 @@
 
 namespace olc {
 
-inline void unreachable(const char *file, int line, const char *msg) {
+[[noreturn]] inline void unreachable(const char *file, int line, const char *msg) {
 #ifndef NDEBUG
   std::fprintf(stderr, "%s:%d: unreachable: %s\n", file, line, msg);
 #endif

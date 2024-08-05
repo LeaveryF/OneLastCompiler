@@ -117,44 +117,76 @@ public:
           dimSizes.push_back(d);
         }
         Type *arrayType = ArrayType::get(type, size, dimSizes);
-        if (isGlobal) {
+        if (ctx->isConst) {
+          // 常量数组
+          std::vector<Constant *> values(size, nullptr);
+          int index = 0;
+
+          std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
+          dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
+            for (auto *val : ctx->initVal()) {
+              if (val->expr()) {
+                values[index++] = constFolder.resolve(val->expr());
+              } else {
+                int match = 1, matchDim = dimSizes.size();
+                while (--matchDim > dim) {
+                  if (index % (match * dimSizes[matchDim]) == 0) {
+                    match *= dimSizes[matchDim];
+                  } else {
+                    break;
+                  }
+                }
+                if (matchDim == dimSizes.size() - 1) {
+                  olc_unreachable("初始化列表错误");
+                }
+                dfs(val, dim + 1, index + match);
+              }
+            }
+            while (index < len) {
+              if (type->isFloatTy()) {
+                values[index++] = new ConstantValue(0.f);
+              } else {
+                values[index++] = new ConstantValue(0);
+              }
+            }
+          };
+          dfs(varDef->initVal(), 0, size);
+          symbolTable.insert(varName, new ConstantArray(arrayType, values));
+        } else if (isGlobal) {
           // 全局数组
-          // olc_unreachable("NYI");
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            // initializer = std::any_cast<ConstantValue *>(
-            //     constFolder.visit(varDef->initVal()));
-            // 判断全局变量是否为常量
             std::vector<Constant *> values(size, nullptr);
             int index = 0;
-
-            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
-                [&](sysy2022Parser::InitValContext *ctx, int len) {
-                  for (auto *val : ctx->initVal()) {
-                    if (val->expr()) {
-                      values[index++] =
-                          cast<Constant>(std::any_cast<ConstantValue *>(
-                              constFolder.visit(val->expr())));
+            std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
+            dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
+              for (auto *val : ctx->initVal()) {
+                if (val->expr()) {
+                  values[index++] = constFolder.resolve(val->expr());
+                } else {
+                  int match = 1, matchDim = dimSizes.size();
+                  while (--matchDim > dim) {
+                    if (index % (match * dimSizes[matchDim]) == 0) {
+                      match *= dimSizes[matchDim];
                     } else {
-                      int match = 1, n = dimSizes.size();
-                      for (int i = 1; i < n; i++) {
-                        if (index % (match * dimSizes[n - i]) == 0) {
-                          match *= dimSizes[n - i];
-                        } else {
-                          break;
-                        }
-                      }
-                      if (match == 1) {
-                        olc_unreachable("初始化列表错误");
-                      }
-                      dfs(val, index + match);
+                      break;
                     }
                   }
-                  while (index < len) {
-                    values[index++] = new ConstantValue(0);
+                  if (matchDim == dimSizes.size() - 1) {
+                    olc_unreachable("初始化列表错误");
                   }
-                };
-            dfs(varDef->initVal(), size);
+                  dfs(val, dim + 1, index + match);
+                }
+              }
+              while (index < len) {
+                if (type->isFloatTy()) {
+                  values[index++] = new ConstantValue(0.f);
+                } else {
+                  values[index++] = new ConstantValue(0);
+                }
+              }
+            };
+            dfs(varDef->initVal(), 0, size);
             initializer = cast<Constant>(new ConstantArray(arrayType, values));
           }
           GlobalVariable *globalVar =
@@ -167,35 +199,38 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            std::vector<ConstantValue *> values(size, nullptr);
+            std::vector<Value *> values(size, nullptr);
             int index = 0;
 
-            std::function<void(sysy2022Parser::InitValContext *, int)> dfs =
-                [&](sysy2022Parser::InitValContext *ctx, int len) {
-                  for (auto *val : ctx->initVal()) {
-                    if (val->expr()) {
-                      values[index++] = std::any_cast<ConstantValue *>(
-                          constFolder.visit(val->expr()));
+            std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
+            dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
+              for (auto *val : ctx->initVal()) {
+                if (val->expr()) {
+                  values[index++] = createRValue(val->expr());
+                } else {
+                  int match = 1, matchDim = dimSizes.size();
+                  while (--matchDim > dim) {
+                    if (index % (match * dimSizes[matchDim]) == 0) {
+                      match *= dimSizes[matchDim];
                     } else {
-                      int match = 1, n = dimSizes.size();
-                      for (int i = 1; i < n; i++) {
-                        if (index % (match * dimSizes[n - i]) == 0) {
-                          match *= dimSizes[n - i];
-                        } else {
-                          break;
-                        }
-                      }
-                      if (match == 1) {
-                        olc_unreachable("初始化列表错误");
-                      }
-                      dfs(val, index + match);
+                      break;
                     }
                   }
-                  while (index < len) {
-                    values[index++] = new ConstantValue(0);
+                  if (matchDim == dimSizes.size() - 1) {
+                    olc_unreachable("初始化列表错误");
                   }
-                };
-            dfs(varDef->initVal(), size);
+                  dfs(val, dim + 1, index + match);
+                }
+              }
+              while (index < len) {
+                if (type->isFloatTy()) {
+                  values[index++] = new ConstantValue(0.f);
+                } else {
+                  values[index++] = new ConstantValue(0);
+                }
+              }
+            };
+            dfs(varDef->initVal(), 0, size);
             // 初始化数组
             for (int i = 0; i < (int)size; ++i) {
               Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
@@ -206,7 +241,15 @@ public:
         }
       } else {
         /* 变量定义 */
-        if (isGlobal) {
+        if (ctx->isConst) {
+          // 常量变量
+          Constant *initializer = nullptr;
+          if (varDef->initVal()) {
+            initializer = std::any_cast<ConstantValue *>(
+                constFolder.visit(varDef->initVal()));
+          }
+          symbolTable.insert(varName, initializer);
+        } else if (isGlobal) {
           // 初始化全局变量的值
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
@@ -628,48 +671,53 @@ public:
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
-    if (ctx->expr().size()) {
-      // FIXME: Global
-      AllocaInst *lVal =
-          cast<AllocaInst>(symbolTable.lookup(ctx->ID()->getText()));
-      if (!lVal) {
-        fprintf(
-            stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
-        olc_unreachable("error");
-      }
-      std::vector<int> dimSizes =
-          cast<ArrayType>(lVal->getAllocatedType())->getDimSizes();
-      std::vector<int> indices;
-      for (auto *expr : ctx->expr()) {
-        indices.push_back(
-            std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
-      }
-      debug(dimSizes);
-      debug(indices);
-      std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
-      lens.push_back(1);
-      std::reverse(lens.begin(), lens.end());
-      for (int i = 1; i < (int)lens.size(); i++) {
-        lens[i] *= lens[i - 1];
-      }
-      std::reverse(lens.begin(), lens.end());
-      debug(lens);
-      int index = 0;
-      for (int i = 0; i < (int)indices.size(); i++) {
-        index += indices[i] * lens[i];
-      }
-      Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-          lVal, new ConstantValue(index));
-      valueMap[ctx] = elementPtr;
-      isLValueMap[ctx] = true;
-      return {};
-    }
-    auto *lVal = symbolTable.lookup(ctx->ID()->getText());
+    Value *lVal = symbolTable.lookup(ctx->ID()->getText());
     if (!lVal) {
       fprintf(stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
       olc_unreachable("error");
     }
-    valueMap[ctx] = lVal;
+
+    if (!isa<GlobalVariable>(lVal) && isa<Constant>(lVal)) {
+      valueMap[ctx] = constFolder.resolve(ctx);
+      isLValueMap[ctx] = false;
+      return {};
+    }
+
+    if (ctx->expr().empty()) {
+      valueMap[ctx] = lVal;
+      isLValueMap[ctx] = true;
+      return {};
+    }
+
+    std::vector<int> dimSizes;
+    if (isa<AllocaInst>(lVal)) {
+      AllocaInst *inst = cast<AllocaInst>(lVal);
+      dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+    } else if (isa<GlobalVariable>(lVal)) {
+      GlobalVariable *inst = cast<GlobalVariable>(lVal);
+      dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
+    } else {
+      olc_unreachable("Unexpected instruction type");
+    }
+    std::vector<int> indices;
+    for (auto *expr : ctx->expr()) {
+      indices.push_back(
+          std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
+    }
+    std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
+    lens.push_back(1);
+    std::reverse(lens.begin(), lens.end());
+    for (int i = 1; i < (int)lens.size(); i++) {
+      lens[i] *= lens[i - 1];
+    }
+    std::reverse(lens.begin(), lens.end());
+    int index = 0;
+    for (int i = 0; i < (int)indices.size(); i++) {
+      index += indices[i] * lens[i];
+    }
+    Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+        lVal, new ConstantValue(index));
+    valueMap[ctx] = elementPtr;
     isLValueMap[ctx] = true;
     return {};
   }
