@@ -54,19 +54,27 @@ public:
     static constexpr int kMaxIntReg = 13; // remaining 3 for sp, lr, pc
     static constexpr int kMaxFloatReg = 16;
 
+    std::string allocIntReg() {
+      if (intCounter < kMaxIntReg) {
+        return "r" + std::to_string(intCounter++);
+      } else {
+        olc_unreachable("Reg Limit Exceeded");
+      }
+    }
+
+    std::string allocFloatReg() {
+      if (floatCounter < kMaxFloatReg) {
+        return "s" + std::to_string(floatCounter++);
+      } else {
+        olc_unreachable("Reg Limit Exceeded");
+      }
+    }
+
     std::string allocReg(Value *val) {
       if (val->getType()->isFloatTy()) {
-        if (floatCounter < kMaxFloatReg) {
-          return "s" + std::to_string(floatCounter++);
-        } else {
-          olc_unreachable("Reg Limit Exceeded");
-        }
+        return allocFloatReg();
       } else {
-        if (intCounter < kMaxIntReg) {
-          return "r" + std::to_string(intCounter++);
-        } else {
-          olc_unreachable("Reg Limit Exceeded");
-        }
+        return allocIntReg();
       }
     }
 
