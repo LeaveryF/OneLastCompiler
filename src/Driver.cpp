@@ -36,9 +36,15 @@ int main(int argc, const char *argv[]) {
   //   std::ifstream fin("../test/" + fname);
 
   // 单文件测试
-  std::ifstream fin("../test/data/test.sy");
+  std::string filename;
+  if (argc <= 1) {
+    filename = "../test/data/test.sy";
+  } else {
+    filename = argv[1];
+  }
+  std::ifstream fin{filename};
   if (!fin) {
-    std::cout << "File not found" << std::endl;
+    std::cout << "File not found: " << filename << std::endl;
     return 1;
   }
   ANTLRInputStream input(fin);
@@ -91,7 +97,8 @@ int main(int argc, const char *argv[]) {
   // };
 
   // for (auto &&[val, intv] : liveness.liveIntervals) {
-  //   std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
+  //   std::cout << "Var %" << getValName(val) << " live interval: [" <<
+  //   intv.first
   //             << ", " << intv.second << "]\n";
   // }
 
