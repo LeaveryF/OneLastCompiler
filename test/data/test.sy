@@ -1,4 +1,4 @@
-/*
+
 int cv = 100;
 int v = cv;
 int a = 1, b, c = 3;
@@ -7,7 +7,7 @@ void testArm() {
 }
 int testContinueBreak(int a, int b) {
   while (a < b) {
-    while (true) {
+    while (1) {
       /// 
       break;
     }
@@ -64,9 +64,9 @@ int testBranch(int a, int b) {
   } else {
     c = b;
   }
-  if (1 < 0 || a > b && 1 > 0 && !!!(a)) {
-    return -1;
-  }
+  // if (1 < 0 || a > b && 1 > 0 && !!!(a)) {
+  //   return -1;
+  // }
   return c;
 }
 int testCall(int a, int b) {
@@ -109,7 +109,6 @@ int testArray() {
   //int arr[2][3][4] = {1, 2, 3, 4, {5}, {6}, {7, 8}};
   return 0;
 }
-*/
 
 const int a1[3] = {3, 1, 4};
 int a2[3] = {1, 1, a1[2]};

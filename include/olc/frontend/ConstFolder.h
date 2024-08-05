@@ -10,7 +10,7 @@
 #include <sysy2022BaseVisitor.h>
 
 #include <olc/ir/IR.h>
-#include <olc/utils/symtab.h>
+#include <olc/utils/SymbolTable.h>
 
 #include <olc/debug.h>
 
@@ -18,10 +18,10 @@ using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> &symbolTable;
+  SymbolTable &symbolTable;
 
 public:
-  ConstFoldVisitor(SymTab<std::string, Value *> &symbolTable)
+  ConstFoldVisitor(SymbolTable &symbolTable)
       : symbolTable(symbolTable) {}
 
   ConstantValue *resolve(antlr4::ParserRuleContext *ctx) {
@@ -47,7 +47,6 @@ public:
 
   Constant *resolveName(std::string name) {
     auto *val = symbolTable.lookup(name);
-    assert(val && "Variable not found");
     if (auto *global = dyn_cast<GlobalVariable>(val)) {
       return cast<Constant>(global->getInitializer());
     } else if (auto *konst = dyn_cast<Constant>(val)) {
@@ -69,7 +68,7 @@ public:
 
     // 若为数组, 则需要计算偏移量
     auto *arr = cast<ConstantArray>(val);
-    auto shape = cast<ArrayType>(arr->getType())->getDimSizes();
+    auto &shape = symbolTable.lookupShape(varName);
     auto indices = resolveIntList(ctx->expr());
     int offset = 0;
     for (int i = 0; i < indices.size(); i++) {

@@ -12,7 +12,7 @@
 #include <sysy2022BaseVisitor.h>
 
 #include <olc/ir/IR.h>
-#include <olc/utils/symtab.h>
+#include <olc/utils/SymbolTable.h>
 
 #include <olc/debug.h>
 #include <olc/frontend/ConstFolder.h>
@@ -23,7 +23,7 @@ class ConstFoldVisitor;
 
 class CodeGenASTVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> &symbolTable;
+  SymbolTable &symbolTable;
   // IR Value 表
   std::map<antlr4::ParserRuleContext *, Value *> valueMap;
   // 推导节点是否为左值
@@ -84,8 +84,7 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
 
 public:
   CodeGenASTVisitor(
-      Module *module, ConstFoldVisitor &constFolder,
-      SymTab<std::string, Value *> &symbolTable)
+      Module *module, ConstFoldVisitor &constFolder, SymbolTable &symbolTable)
       : curModule(module), curFunction(nullptr), constFolder(constFolder),
         symbolTable(symbolTable) {}
 
@@ -111,12 +110,10 @@ public:
         size_t size = 1;
         std::vector<int> dimSizes;
         for (const auto &expr : varDef->constExpr()) {
-          int d =
-              std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt();
-          size *= d;
-          dimSizes.push_back(d);
+          dimSizes.push_back(constFolder.resolveInt(expr));
+          size *= dimSizes.back();
         }
-        Type *arrayType = ArrayType::get(type, size, dimSizes);
+        Type *arrayType = ArrayType::get(type, size);
         if (ctx->isConst) {
           // 常量数组
           std::vector<Constant *> values(size, nullptr);
@@ -151,7 +148,8 @@ public:
             }
           };
           dfs(varDef->initVal(), 0, size);
-          symbolTable.insert(varName, new ConstantArray(arrayType, values));
+          symbolTable.insert(
+              varName, new ConstantArray(arrayType, values), dimSizes);
         } else if (isGlobal) {
           // 全局数组
           Constant *initializer = nullptr;
@@ -192,11 +190,11 @@ public:
           GlobalVariable *globalVar =
               new GlobalVariable(arrayType, varName, initializer);
           curModule->addGlobal(globalVar);
-          symbolTable.insert(varName, globalVar);
+          symbolTable.insert(varName, globalVar, dimSizes);
         } else {
           // 局部数组分配
           Value *allocaInst = curBasicBlock->create<AllocaInst>(arrayType);
-          symbolTable.insert(varName, allocaInst);
+          symbolTable.insert(varName, allocaInst, dimSizes);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
             std::vector<Value *> values(size, nullptr);
@@ -245,16 +243,14 @@ public:
           // 常量变量
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = std::any_cast<ConstantValue *>(
-                constFolder.visit(varDef->initVal()));
+            initializer = constFolder.resolve(varDef->initVal());
           }
           symbolTable.insert(varName, initializer);
         } else if (isGlobal) {
           // 初始化全局变量的值
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = std::any_cast<ConstantValue *>(
-                constFolder.visit(varDef->initVal()));
+            initializer = constFolder.resolve(varDef->initVal());
             // 判断全局变量是否为常量
           }
           GlobalVariable *globalVar =
@@ -301,11 +297,16 @@ public:
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
     std::vector<Argument *> args;
+    std::vector<std::vector<int>> argShapes;
 
     // 处理形参
     for (const auto &param : ctx->funcFParam()) {
       auto *type = convertType(param->basicType->getText());
       args.push_back(new Argument{type, param->ID()->getText()});
+      argShapes.push_back({});
+      for (auto *dim : param->expr()) {
+        argShapes.back().push_back(constFolder.resolveInt(dim));
+      }
     }
     // 加到module中
     Function *function = new Function(retType, ctx->ID()->getText(), args);
@@ -319,10 +320,11 @@ public:
     // 进入新的作用域
     symbolTable.enterScope();
     // 参数加到符号表中 生成alloca和store指令
-    for (const auto &arg : args) {
+    for (unsigned i = 0; i < args.size(); i++) {
+      auto &arg = args[i];
       Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
       curBasicBlock->create<StoreInst>(arg, allocaInst);
-      symbolTable.insert(arg->argName, allocaInst);
+      symbolTable.insert(arg->argName, allocaInst, argShapes[i]);
     }
 
     // 处理函数体
@@ -671,11 +673,9 @@ public:
   }
 
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
-    Value *lVal = symbolTable.lookup(ctx->ID()->getText());
-    if (!lVal) {
-      fprintf(stderr, "undefined variable: %s\n", ctx->ID()->getText().c_str());
-      olc_unreachable("error");
-    }
+    auto varName = ctx->ID()->getText();
+    Value *lVal = symbolTable.lookup(varName);
+    std::vector<int> dimSizes = symbolTable.lookupShape(varName);
 
     if (!isa<GlobalVariable>(lVal) && isa<Constant>(lVal)) {
       valueMap[ctx] = constFolder.resolve(ctx);
@@ -689,21 +689,7 @@ public:
       return {};
     }
 
-    std::vector<int> dimSizes;
-    if (isa<AllocaInst>(lVal)) {
-      AllocaInst *inst = cast<AllocaInst>(lVal);
-      dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
-    } else if (isa<GlobalVariable>(lVal)) {
-      GlobalVariable *inst = cast<GlobalVariable>(lVal);
-      dimSizes = cast<ArrayType>(inst->getAllocatedType())->getDimSizes();
-    } else {
-      olc_unreachable("Unexpected instruction type");
-    }
-    std::vector<int> indices;
-    for (auto *expr : ctx->expr()) {
-      indices.push_back(
-          std::any_cast<ConstantValue *>(constFolder.visit(expr))->getInt());
-    }
+    std::vector<int> indices = constFolder.resolveIntList(ctx->expr());
     std::vector<int> lens(dimSizes.begin() + 1, dimSizes.end());
     lens.push_back(1);
     std::reverse(lens.begin(), lens.end());
