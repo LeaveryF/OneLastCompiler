@@ -11,6 +11,16 @@ void ArmWriter::printModule(Module *module) {
   os << ".text\n";
   os << ".global _start\n";
   for (auto &func : module->functions) {
+    os << ".global " << func->fnName << '\n';
+  }
+  os << R"sss(
+_start:
+  bl main
+  mov r7, #1
+  swi 0
+
+)sss";
+  for (auto &func : module->functions) {
     printFunc(func);
   }
 }
@@ -22,11 +32,7 @@ void ArmWriter::printGlobal(GlobalVariable *global) {
 
 void ArmWriter::printFunc(Function *function) {
   curFunction = function;
-  if (function->fnName == "main") {
-    os << "_start:\n";
-  } else {
-    os << function->fnName << ":\n";
-  }
+  os << function->fnName << ":\n";
 
   // 计算栈空间
   stackSize = 0;
