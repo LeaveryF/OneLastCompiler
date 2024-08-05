@@ -560,7 +560,7 @@ public:
       return {};
 
     earlyExit = true;
-    auto *curCondBB = endBBStack.back();
+    auto *curCondBB = condBBStack.back();
     curBasicBlock->create<JumpInst>(curCondBB);
     if (find(
             curCondBB->predecessors.begin(), curCondBB->predecessors.end(),
