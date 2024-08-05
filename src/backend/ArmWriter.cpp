@@ -26,8 +26,26 @@ _start:
 }
 
 void ArmWriter::printGlobal(GlobalVariable *global) {
-  // TODO: data section
-  os << "\n";
+  os << global->getName() << ":\n";
+  assert(!global->getAllocatedType()->isFloatTy() && "NYI");
+  std::function<void(Constant *)> printConst = [&](Constant *val) {
+    if (auto *arr = dyn_cast<ConstantArray>(val)) {
+      for (auto *elt : arr->values) {
+        printConst(elt);
+      }
+      os << ".size " << global->getName() << ", " << arr->values.size() * 4
+         << '\n';
+    } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+      if (constVal->isInt()) {
+        os << ".word " << constVal->getInt() << '\n';
+      } else {
+        olc_unreachable("HEX float NYI");
+      }
+    } else {
+      olc_unreachable("NYI");
+    }
+  };
+  printConst(global->getInitializer());
 }
 
 void ArmWriter::printFunc(Function *function) {

@@ -82,8 +82,8 @@ public:
     } else {
       if (auto *ld = dyn_cast<LoadInst>(val))
         val = ld->getPointer();
-      if (isa<GlobalVariable>(val)) {
-        olc_unreachable("GV NYI");
+      if (auto *gv = dyn_cast<GlobalVariable>(val)) {
+        printArmInstr("ldr", {reg, "=" + gv->getName()});
       } else {
         printArmInstr("ldr", {reg, getStackOper(val)});
       }
