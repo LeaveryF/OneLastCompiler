@@ -173,6 +173,14 @@ struct Function : User {
     return cast<FunctionType>(getType())->getRetType();
   }
 
+  unsigned getArgNo(Argument *arg) {
+    for (unsigned i = 0; i < args.size(); i++) {
+      if (args[i] == arg)
+        return i;
+    }
+    olc_unreachable("Unknown argument");
+  }
+
 private:
   static FunctionType *
   createFuncType(Type *retType, std::vector<Argument *> const &args) {
@@ -305,7 +313,7 @@ struct LoadInst : Instruction {
 };
 
 struct GetElementPtrInst : Instruction {
-  GetElementPtrInst(BasicBlock *bb, Value *ptr, ConstantValue *idx)
+  GetElementPtrInst(BasicBlock *bb, Value *ptr, Value *idx)
       : Instruction(
             bb,
             PointerType::get(
@@ -317,7 +325,7 @@ struct GetElementPtrInst : Instruction {
   static bool classof(const Value *V) { return V->tag == Tag::GetElementPtr; }
 
   Value *getPointer() const { return getOperand(0); }
-  ConstantValue *getIndex() const { return cast<ConstantValue>(getOperand(1)); }
+  Value *getIndex() const { return getOperand(1); }
 };
 
 struct IntToFloatInst : Instruction {

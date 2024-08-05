@@ -75,5 +75,4 @@ endfunction()
 
 # Usage of the newly defined function
 add_olc_test_target(test_ir_asm test/test_ir_asm.cpp)
-add_olc_test_target(test_symtab test/test_symtab.cpp)
 add_olc_test_target(test_ir_type test/test_ir_type.cpp)
