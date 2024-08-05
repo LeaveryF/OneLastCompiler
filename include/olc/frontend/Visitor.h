@@ -38,12 +38,12 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   ConstFoldVisitor &constFolder;
 
   // 标签计数
-  int labelCnt;
+  int labelCnt = 0;
   // 当前条件块(for continue) 当前结束块(for break)
   // FIXME(!!!): Use stack for nested loops
-  BasicBlock *curCondBB, *curEndBB;
+  BasicBlock *curCondBB = nullptr, *curEndBB = nullptr;
   // 是否提前退出基本块
-  bool earlyExit;
+  bool earlyExit = false;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
