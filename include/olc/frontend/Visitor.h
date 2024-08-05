@@ -398,7 +398,8 @@ public:
     if (earlyExit)
       return {};
 
-    visit(ctx->expr());
+    if (ctx->expr())
+      visit(ctx->expr());
     return {};
   }
 
