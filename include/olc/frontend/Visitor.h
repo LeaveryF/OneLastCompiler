@@ -38,12 +38,14 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   ConstFoldVisitor &constFolder;
 
   // 标签计数
-  int labelCnt;
-  // 当前条件块(for continue) 当前结束块(for break)
-  // FIXME(!!!): Use stack for nested loops
-  BasicBlock *curCondBB, *curEndBB;
+  int labelCnt = 0;
+  // 当前条件块(for continue) 当前结束块(for break) 栈
+  std::vector<BasicBlock *> condBBStack, endBBStack;
   // 是否提前退出基本块
-  bool earlyExit;
+  bool earlyExit = false;
+
+  // 当前btrue(for or short circuit) 当前bfalse(for and short circuit) 栈
+  std::vector<BasicBlock *> btrueStack, bfalseStack;
 
   Type *convertType(std::string const &typeStr) {
     if (typeStr == "int") {
@@ -392,6 +394,7 @@ public:
   visitBlockStmt(sysy2022Parser::BlockStmtContext *ctx) override {
     if (earlyExit)
       return {};
+
     visit(ctx->block());
     return {};
   }
@@ -400,16 +403,20 @@ public:
     if (earlyExit)
       return {};
 
-    // 获取条件
-    auto *condInst = createCondValue(ctx->cond());
     // 创建基本块
     BasicBlock *btrue = nullptr, *bfalse = nullptr, *end = nullptr;
-    btrue = new BasicBlock(curFunction, "btrue" + std::to_string(labelCnt++));
+    btrue = new BasicBlock(curFunction, "btrue_" + std::to_string(labelCnt));
     if (ctx->stmt().size() == 2) {
       bfalse =
-          new BasicBlock(curFunction, "bfalse" + std::to_string(labelCnt++));
+          new BasicBlock(curFunction, "bfalse_" + std::to_string(labelCnt));
     }
-    end = new BasicBlock(curFunction, "endif" + std::to_string(labelCnt++));
+    end = new BasicBlock(curFunction, "endif_" + std::to_string(labelCnt++));
+
+    btrueStack.push_back(btrue);
+    bfalseStack.push_back(bfalse ? bfalse : end);
+
+    // 获取条件
+    auto *condInst = createCondValue(ctx->cond());
 
     // 创建指令 维护CFG
     curBasicBlock->create<BranchInst>(condInst, btrue, bfalse ? bfalse : end);
@@ -451,6 +458,9 @@ public:
     curFunction->addBasicBlock(end);
     curBasicBlock = end;
 
+    btrueStack.pop_back();
+    bfalseStack.pop_back();
+
     return {};
   }
 
@@ -461,11 +471,11 @@ public:
 
     // 创建基本块
     BasicBlock *cond = nullptr, *loop = nullptr, *end = nullptr;
-    cond = new BasicBlock(curFunction, "cond" + std::to_string(labelCnt++));
-    loop = new BasicBlock(curFunction, "loop" + std::to_string(labelCnt++));
-    end = new BasicBlock(curFunction, "endloop" + std::to_string(labelCnt++));
-    curCondBB = cond;
-    curEndBB = end;
+    cond = new BasicBlock(curFunction, "cond_" + std::to_string(labelCnt));
+    loop = new BasicBlock(curFunction, "loop_" + std::to_string(labelCnt));
+    end = new BasicBlock(curFunction, "endloop_" + std::to_string(labelCnt++));
+    condBBStack.push_back(cond);
+    endBBStack.push_back(end);
 
     // 创建指令 维护CFG
     curBasicBlock->create<JumpInst>(cond);
@@ -475,10 +485,15 @@ public:
     // cond
     curFunction->addBasicBlock(cond);
     curBasicBlock = cond;
+
+    btrueStack.push_back(loop);
+    bfalseStack.push_back(end);
+
     // 获取条件
     auto *condInst = createCondValue(ctx->cond());
     // 创建指令 维护CFG
     curBasicBlock->create<BranchInst>(condInst, loop, end);
+
     curBasicBlock->successors.push_back(loop);
     curBasicBlock->successors.push_back(end);
     loop->predecessors.push_back(curBasicBlock);
@@ -501,6 +516,12 @@ public:
     curFunction->addBasicBlock(end);
     curBasicBlock = end;
 
+    condBBStack.pop_back();
+    endBBStack.pop_back();
+
+    btrueStack.pop_back();
+    bfalseStack.pop_back();
+
     return {};
   }
 
@@ -510,6 +531,7 @@ public:
       return {};
 
     earlyExit = true;
+    auto *curEndBB = endBBStack.back();
     curBasicBlock->create<JumpInst>(curEndBB);
     if (find(
             curEndBB->predecessors.begin(), curEndBB->predecessors.end(),
@@ -526,6 +548,7 @@ public:
       return {};
 
     earlyExit = true;
+    auto *curCondBB = endBBStack.back();
     curBasicBlock->create<JumpInst>(curCondBB);
     if (find(
             curCondBB->predecessors.begin(), curCondBB->predecessors.end(),
@@ -747,14 +770,62 @@ public:
   }
 
   virtual std::any visitAndExpr(sysy2022Parser::AndExprContext *ctx) override {
-    // NOTE: Use createCondValue for LHS and RHS
-    olc_unreachable("short circuit logic NYI");
+    // 创建基本块
+    BasicBlock *bcondtrue =
+        new BasicBlock(curFunction, "bcondtrue_" + std::to_string(labelCnt++));
+    BasicBlock *bcondfalse = bfalseStack.back();
+
+    // 获取左操作数
+    auto *left = createCondValue(ctx->cond(0));
+
+    // 创建指令 维护CFG
+    // bcondtrue是指对于该条件分支成功与否
+    curBasicBlock->create<BranchInst>(left, bcondtrue, bcondfalse);
+    curBasicBlock->successors.push_back(bcondtrue);
+    curBasicBlock->successors.push_back(bcondfalse);
+    bcondtrue->predecessors.push_back(curBasicBlock);
+    bcondfalse->predecessors.push_back(curBasicBlock);
+
+    // bcondtrue
+    // 获取右操作数
+    curFunction->addBasicBlock(bcondtrue);
+    curBasicBlock = bcondtrue;
+
+    auto *right = createCondValue(ctx->cond(1));
+    valueMap[ctx] = right;
+
     return {};
   }
 
   virtual std::any visitOrExpr(sysy2022Parser::OrExprContext *ctx) override {
-    // NOTE: Use createCondValue for LHS and RHS
-    olc_unreachable("short circuit logic NYI");
+    // 创建基本块
+    BasicBlock *bcondtrue =
+        new BasicBlock(curFunction, "bcondtrue_" + std::to_string(labelCnt++));
+    BasicBlock *bcondfalse = btrueStack.back();
+
+    bfalseStack.push_back(bcondtrue);
+
+    // 获取左操作数
+    auto *left = createCondValue(ctx->cond(0));
+
+    bfalseStack.pop_back();
+
+    // 创建指令 维护CFG
+    // bcondtrue是指对于该条件分支成功与否
+    curBasicBlock->create<BranchInst>(left, bcondfalse, bcondtrue);
+    curBasicBlock->successors.push_back(bcondtrue);
+    curBasicBlock->successors.push_back(bcondfalse);
+    bcondtrue->predecessors.push_back(curBasicBlock);
+    bcondfalse->predecessors.push_back(curBasicBlock);
+
+    // bcondtrue
+    // 获取右操作数
+    curFunction->addBasicBlock(bcondtrue);
+    curBasicBlock = bcondtrue;
+
+    auto *right = createCondValue(ctx->cond(1));
+    valueMap[ctx] = right;
+
     return {};
   }
 
