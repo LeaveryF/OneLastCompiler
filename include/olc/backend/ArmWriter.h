@@ -80,12 +80,28 @@ public:
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       printArmInstr("mov", {reg, getImme(constVal)});
     } else {
-      if (auto *ld = dyn_cast<LoadInst>(val))
+      if (auto *ld = dyn_cast<LoadInst>(val)) {
         val = ld->getPointer();
-      if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-        printArmInstr("ldr", {reg, "=" + gv->getName()});
+        if (auto *gv = dyn_cast<GlobalVariable>(val)) {
+          printArmInstr("ldr", {reg, "=" + gv->getName()});
+          printArmInstr("ldr", {reg, "[" + reg + "]"});
+        } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
+          printArmInstr("ldr", {reg, getStackOper(val)});
+        } else { // If non-static address, use memory slot
+          // Load from memory slot
+          printArmInstr("ldr", {reg, getStackOper(val)});
+          // Load from the loaded address
+          printArmInstr("ldr", {reg, "[" + reg + "]"});
+        }
       } else {
-        printArmInstr("ldr", {reg, getStackOper(val)});
+        if (auto *gv = dyn_cast<GlobalVariable>(val)) {
+          printArmInstr("ldr", {reg, "=" + gv->getName()});
+        } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
+          printArmInstr(
+              "add", {reg, "sp", "#" + std::to_string(stackMap[val])});
+        } else { // If non-static address, use memory slot
+          printArmInstr("ldr", {reg, getStackOper(val)});
+        }
       }
     }
   }
