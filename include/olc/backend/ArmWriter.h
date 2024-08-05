@@ -1,6 +1,7 @@
 #include <olc/ir/IR.h>
 
 #include <iostream>
+#include <set>
 #include <unordered_map>
 
 namespace olc {
@@ -47,30 +48,74 @@ public:
   std::string getImme(ConstantValue *val);
   std::string getLabel(BasicBlock *bb);
 
+  struct NaiveAllocater;
+  // RAII helper for reg alloc
+  struct Reg {
+    bool isFloat;
+    int id;
+    NaiveAllocater *alloc;
+    std::string abiName() const {
+      assert(id >= 0 && "Invalid reg!");
+      if (isFloat) {
+        return "s" + std::to_string(id);
+      } else {
+        return "r" + std::to_string(id);
+      }
+    }
+    operator std::string() const { return abiName(); }
+    Reg(bool isFloat, int id, NaiveAllocater *alloc)
+        : isFloat(isFloat), id(id), alloc(alloc) {}
+    ~Reg();
+    Reg(const Reg &) = delete;
+    Reg &operator=(const Reg &) = delete;
+    Reg(Reg &&);
+    Reg &operator=(Reg &&);
+  };
+
   struct NaiveAllocater {
-    int intCounter = 0;
-    int floatCounter = 0;
-    // ARMv7 limits
-    static constexpr int kMaxIntReg = 13; // remaining 3 for sp, lr, pc
-    static constexpr int kMaxFloatReg = 16;
+    std::set<int> intRegs, fltRegs;
 
-    std::string allocIntReg() {
-      if (intCounter < kMaxIntReg) {
-        return "r" + std::to_string(intCounter++);
+    NaiveAllocater() { reset(); }
+
+    Reg allocIntReg() {
+      if (intRegs.size()) {
+        int allocated = *intRegs.begin();
+        intRegs.erase(intRegs.begin());
+        return Reg{false, allocated, this};
       } else {
         olc_unreachable("Reg Limit Exceeded");
       }
     }
 
-    std::string allocFloatReg() {
-      if (floatCounter < kMaxFloatReg) {
-        return "s" + std::to_string(floatCounter++);
+    Reg allocFloatReg() {
+      if (fltRegs.size()) {
+        int allocated = *fltRegs.begin();
+        fltRegs.erase(fltRegs.begin());
+        return Reg{true, allocated, this};
       } else {
         olc_unreachable("Reg Limit Exceeded");
       }
     }
 
-    std::string allocReg(Value *val) {
+    Reg claimIntReg(int reg) {
+      if (auto it = intRegs.find(reg); it != intRegs.end()) {
+        intRegs.erase(it);
+      } else {
+        olc_unreachable("Reg conflict");
+      }
+      return Reg{false, reg, this};
+    }
+
+    Reg claimFloatReg(int reg) {
+      if (auto it = fltRegs.find(reg); it != fltRegs.end()) {
+        fltRegs.erase(it);
+      } else {
+        olc_unreachable("Reg conflict");
+      }
+      return Reg{true, reg, this};
+    }
+
+    Reg allocReg(Value *val) {
       if (val->getType()->isFloatTy()) {
         return allocFloatReg();
       } else {
@@ -79,12 +124,18 @@ public:
     }
 
     void reset() {
-      intCounter = 0;
-      floatCounter = 0;
+      intRegs.clear();
+      fltRegs.clear();
+      for (int i = 0; i <= 12; ++i) {
+        intRegs.insert(i);
+      }
+      for (int i = 0; i < 32; ++i) {
+        fltRegs.insert(i);
+      }
     }
   } regAlloc;
 
-  void loadToSpecificReg(std::string reg, Value *val) {
+  void loadToSpecificReg(Reg const &reg, Value *val) {
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       printArmInstr("mov", {reg, getImme(constVal)});
     } else {
@@ -92,14 +143,14 @@ public:
         val = ld->getPointer();
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
           printArmInstr("ldr", {reg, "=" + gv->getName()});
-          printArmInstr("ldr", {reg, "[" + reg + "]"});
+          printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
           printArmInstr("ldr", {reg, getStackOper(val)});
         } else { // If non-static address, use memory slot
           // Load from memory slot
           printArmInstr("ldr", {reg, getStackOper(val)});
           // Load from the loaded address
-          printArmInstr("ldr", {reg, "[" + reg + "]"});
+          printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
         }
       } else {
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
@@ -114,10 +165,11 @@ public:
     }
   }
 
-  std::string loadToReg(Value *val) {
+  Reg loadToReg(Value *val) {
     if (auto *arg = dyn_cast<Argument>(val)) {
       if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
-        return "r" + std::to_string(argNo);
+        assert(!arg->getType()->isFloatTy() && "NYI");
+        return regAlloc.claimIntReg(argNo);
       }
       // Otherwise, there should be a memory slot allocated for it.
     }
@@ -126,10 +178,11 @@ public:
     return reg;
   }
 
-  void assignToSpecificReg(std::string reg, Value *val) {
+  void assignToSpecificReg(const Reg &reg, Value *val) {
     if (auto *arg = dyn_cast<Argument>(val)) {
       if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
-        printArmInstr("mov", {reg, "r" + std::to_string(argNo)});
+        assert(!arg->getType()->isFloatTy() && "NYI");
+        printArmInstr("mov", {reg, regAlloc.claimIntReg(argNo)});
         return;
       }
     }
@@ -137,17 +190,17 @@ public:
     loadToSpecificReg(reg, val);
   }
 
-  void storeRegToMemorySlot(std::string reg, Value *val) {
+  void storeRegToMemorySlot(const Reg &reg, Value *val) {
     assert(!isa<AllocaInst>(val) && "Alloca has no memory slot.");
     printArmInstr("str", {reg, getStackOper(val)});
   }
 
-  void storeRegToAddress(std::string reg, Value *ptr) {
+  void storeRegToAddress(const Reg &reg, Value *ptr) {
     if (auto *alloca = dyn_cast<AllocaInst>(ptr)) {
       printArmInstr("str", {reg, getStackOper(ptr)});
     } else {
       auto reg_ptr = loadToReg(ptr);
-      printArmInstr("str", {reg, "[" + reg_ptr + "]"});
+      printArmInstr("str", {reg, "[" + reg_ptr.abiName() + "]"});
     }
   }
 };

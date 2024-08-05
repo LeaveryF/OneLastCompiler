@@ -2,6 +2,29 @@
 
 namespace olc {
 
+ArmWriter::Reg::~Reg() {
+  if (id < 0)
+    return;
+  if (isFloat) {
+    alloc->fltRegs.insert(id);
+  } else {
+    alloc->intRegs.insert(id);
+  }
+}
+
+ArmWriter::Reg::Reg(Reg &&other)
+    : isFloat(other.isFloat), id(other.id), alloc(other.alloc) {
+  other.id = -1;
+}
+
+ArmWriter::Reg &ArmWriter::Reg::operator=(Reg &&other) {
+  isFloat = other.isFloat;
+  id = other.id;
+  alloc = other.alloc;
+  other.id = -1;
+  return *this;
+}
+
 void ArmWriter::printModule(Module *module) {
   os << ".data\n";
   for (auto &global : module->globals) {
@@ -128,12 +151,14 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Mul:
     printBinInstr("mul", instr);
     break;
-  case Value::Tag::Div:
-    printBinInstr("div", instr);
+  case Value::Tag::Div: {
+    olc_unreachable("__aeabi_idiv NYI");
     break;
-  case Value::Tag::Mod:
-    // TODO: mod
+  }
+  case Value::Tag::Mod: {
+    olc_unreachable("__aeabi_idivmod NYI");
     break;
+  }
   case Value::Tag::Lt:
   case Value::Tag::Le:
   case Value::Tag::Ge:
@@ -165,8 +190,9 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto *retInst = cast<ReturnInst>(instr);
     // if not ret void
     // TODO: consider float type
+    Reg reg_ret = regAlloc.claimIntReg(0);
     if (retInst->getNumOperands() == 1)
-      assignToSpecificReg("r0", retInst->getReturnValue());
+      assignToSpecificReg(reg_ret, retInst->getReturnValue());
     printArmInstr("mov", {"sp", "r11"});
     printArmInstr("pop", {"{r11, lr}"});
     printArmInstr("bx", {"lr"});
@@ -175,12 +201,18 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Call: {
     auto *callInst = cast<CallInst>(instr);
     assert(callInst->getArgs().size() < 4 && "NYI");
-    // consider float
+    std::vector<Reg> callRegs;
+    callRegs.emplace_back(regAlloc.claimIntReg(0));
+    for (unsigned i = 1; i < callInst->getArgs().size(); i++)
+      callRegs.emplace_back(regAlloc.claimIntReg(i));
+
+    // TODO: consider float
+
     for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
-      assignToSpecificReg("r" + std::to_string(i), callInst->getArgs()[i]);
+      assignToSpecificReg(callRegs[i], callInst->getArgs()[i]);
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
-    storeRegToMemorySlot("r0", instr);
+    storeRegToMemorySlot(callRegs[0], instr);
     break;
   }
   default:
@@ -189,8 +221,6 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     olc_unreachable("NYI");
     break;
   }
-  // Drop all register values. We have already store the value to stack.
-  regAlloc.reset();
 }
 
 void ArmWriter::printArmInstr(
