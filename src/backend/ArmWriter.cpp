@@ -92,8 +92,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     // TODO: consider float register
     auto *storeInst = cast<StoreInst>(instr);
     auto reg_val = loadToReg(storeInst->getValue());
-    auto reg_ptr = loadToReg(storeInst->getPointer());
-    printArmInstr("str", {reg_val, "[" + reg_ptr + "]"});
+    storeRegToMemorySlot(reg_val, storeInst->getPointer());
     break;
   }
   case Value::Tag::Add:
