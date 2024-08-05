@@ -113,6 +113,8 @@ public:
 
   Type *getElementType() const { return elemType; }
 
+  size_t getSize() const { return size; }
+
   void print(std::ostream &os) const override {
     os << "[";
     elemType->print(os);

@@ -57,9 +57,15 @@ void ArmWriter::printFunc(Function *function) {
   stackMap.clear();
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
-      if (instr->tag == Value::Tag::Alloca ||
-          instr->isDefVar() && instr->tag != Value::Tag::Load) {
-        stackMap[instr] = stackSize; // TODO: array
+      stackMap[instr] = stackSize;
+      if (auto *alloca = dyn_cast<AllocaInst>(instr)) {
+        if (auto *arrTy = dyn_cast<ArrayType>(alloca->getAllocatedType())) {
+          assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+          stackSize += 4 * arrTy->getSize();
+        } else {
+          stackSize += 4;
+        }
+      } else {
         stackSize += 4;
       }
     }
@@ -96,13 +102,13 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::GetElementPtr: {
     auto *gep = cast<GetElementPtrInst>(instr);
     auto reg_ptr = loadToReg(gep->getPointer());
-    std::string reg_offset;
     if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
-      reg_offset = getImme(constIndex);
+      int offset = 4 * constIndex->getInt();
+      printArmInstr("add", {reg_ptr, reg_ptr, "#" + std::to_string(offset)});
     } else {
-      reg_offset = loadToReg(gep->getIndex());
+      std::string reg_offset = loadToReg(gep->getIndex());
+      printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
     }
-    printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
     storeRegToMemorySlot(reg_ptr, instr);
     break;
   }
@@ -110,7 +116,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     // TODO: consider float register
     auto *storeInst = cast<StoreInst>(instr);
     auto reg_val = loadToReg(storeInst->getValue());
-    storeRegToMemorySlot(reg_val, storeInst->getPointer());
+    storeRegToAddress(reg_val, storeInst->getPointer());
     break;
   }
   case Value::Tag::Add:

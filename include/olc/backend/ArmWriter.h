@@ -138,7 +138,17 @@ public:
   }
 
   void storeRegToMemorySlot(std::string reg, Value *val) {
+    assert(!isa<AllocaInst>(val) && "Alloca has no memory slot.");
     printArmInstr("str", {reg, getStackOper(val)});
+  }
+
+  void storeRegToAddress(std::string reg, Value *ptr) {
+    if (auto *alloca = dyn_cast<AllocaInst>(ptr)) {
+      printArmInstr("str", {reg, getStackOper(ptr)});
+    } else {
+      auto reg_ptr = loadToReg(ptr);
+      printArmInstr("str", {reg, "[" + reg_ptr + "]"});
+    }
   }
 };
 
