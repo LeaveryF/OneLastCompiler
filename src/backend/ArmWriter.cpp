@@ -22,6 +22,7 @@ void ArmWriter::printGlobal(GlobalVariable *global) {
 }
 
 void ArmWriter::printFunc(Function *function) {
+  curFunction = function;
   if (function->fnName == "main") {
     os << "_start:\n";
   } else {
@@ -30,7 +31,6 @@ void ArmWriter::printFunc(Function *function) {
 
   // 计算栈空间
   stackSize = 0;
-  curReg = 1;
   stackMap.clear();
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
@@ -43,7 +43,6 @@ void ArmWriter::printFunc(Function *function) {
   }
   printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
 
-  paramCnt = 0;
   if (function->isBuiltin)
     olc_unreachable("NYI");
   for (auto &bb : function->basicBlocks) {
@@ -72,7 +71,12 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::GetElementPtr: {
     auto *gep = cast<GetElementPtrInst>(instr);
     auto reg_ptr = loadToReg(gep->getPointer());
-    auto reg_offset = getImme(gep->getIndex());
+    std::string reg_offset;
+    if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
+      reg_offset = getImme(constIndex);
+    } else {
+      reg_offset = loadToReg(gep->getIndex());
+    }
     printArmInstr("add", {reg_ptr, reg_ptr, reg_offset});
     storeRegToMemorySlot(reg_ptr, instr);
     break;
@@ -133,18 +137,22 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Return: {
     auto *retInst = cast<ReturnInst>(instr);
     // if not ret void
+    // TODO: consider float type
     if (retInst->getNumOperands() == 1)
-      loadToSpecificReg("r0", retInst->getReturnValue());
+      assignToSpecificReg("r0", retInst->getReturnValue());
     printArmInstr("add", {"sp", "sp", "#" + std::to_string(stackSize)});
     printArmInstr("bx", {"lr"});
     break;
   }
   case Value::Tag::Call: {
-    curReg = 0; // TODO: more params
-    for (auto *arg : cast<CallInst>(instr)->getArgs()) {
-      printArmInstr("str", {getReg(), getStackOper(arg)});
+    auto *callInst = cast<CallInst>(instr);
+    assert(callInst->getArgs().size() < 4 && "NYI");
+    for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
+      printArmInstr(
+          "str",
+          {"r" + std::to_string(i), getStackOper(callInst->getArgs()[i])});
     }
-    printArmInstr("bl", {cast<CallInst>(instr)->getCallee()->fnName});
+    printArmInstr("bl", {callInst->getCallee()->fnName});
     break;
   }
   default:
@@ -197,13 +205,6 @@ std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
     // TODO: ensure it is correct
     return "#" + std::to_string(val->getFloat());
   }
-}
-
-std::string ArmWriter::getReg() {
-  if (curReg >= 11) {
-    curReg = 0;
-  }
-  return "r" + std::to_string(curReg++);
 }
 
 std::string ArmWriter::getLabel(BasicBlock *bb) {

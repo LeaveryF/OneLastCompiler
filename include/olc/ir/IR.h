@@ -173,6 +173,14 @@ struct Function : User {
     return cast<FunctionType>(getType())->getRetType();
   }
 
+  unsigned getArgNo(Argument *arg) {
+    for (unsigned i = 0; i < args.size(); i++) {
+      if (args[i] == arg)
+        return i;
+    }
+    olc_unreachable("Unknown argument");
+  }
+
 private:
   static FunctionType *
   createFuncType(Type *retType, std::vector<Argument *> const &args) {

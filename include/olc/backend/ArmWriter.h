@@ -9,9 +9,8 @@ class ArmWriter {
   std::ostream &os;
   std::unordered_map<Value *, int> stackMap;
   std::unordered_map<BasicBlock *, int> labelMap;
+  Function *curFunction = nullptr;
   int stackSize;
-  int paramCnt;
-  int curReg;
 
   std::string getCondTagStr(Value::Tag tag) {
     switch (tag) {
@@ -46,7 +45,6 @@ public:
   void printCmpInstr(BinaryInst *instr);
   std::string getStackOper(Value *val);
   std::string getImme(ConstantValue *val);
-  std::string getReg();
   std::string getLabel(BasicBlock *bb);
 
   struct NaiveAllocater {
@@ -82,14 +80,37 @@ public:
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       printArmInstr("mov", {reg, getImme(constVal)});
     } else {
-      printArmInstr("ldr", {reg, getStackOper(val)});
+      if (auto *ld = dyn_cast<LoadInst>(val))
+        val = ld->getPointer();
+      if (isa<GlobalVariable>(val)) {
+        olc_unreachable("GV NYI");
+      } else {
+        printArmInstr("ldr", {reg, getStackOper(val)});
+      }
     }
   }
 
   std::string loadToReg(Value *val) {
+    if (auto *arg = dyn_cast<Argument>(val)) {
+      if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
+        return "r" + std::to_string(argNo);
+      }
+      // Otherwise, there should be a memory slot allocated for it.
+    }
     auto reg = regAlloc.allocReg(val);
     loadToSpecificReg(reg, val);
     return reg;
+  }
+
+  void assignToSpecificReg(std::string reg, Value *val) {
+    if (auto *arg = dyn_cast<Argument>(val)) {
+      if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
+        printArmInstr("mov", {reg, "r" + std::to_string(argNo)});
+        return;
+      }
+    }
+    // Otherwise, the value has a memory slot.
+    loadToSpecificReg(reg, val);
   }
 
   void storeRegToMemorySlot(std::string reg, Value *val) {
