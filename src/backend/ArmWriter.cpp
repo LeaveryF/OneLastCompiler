@@ -126,15 +126,12 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto *brInst = cast<BranchInst>(instr);
     auto *cond = dyn_cast<BinaryInst>(brInst->getCondition());
     assert(cond && cond->isCmpOp() && "Branch condition must be a cmp op");
-    switch (cond->tag) {
-    case Value::Tag::Lt:
-      auto condTag = getCondTagStr(cond->tag);
-      printCmpInstr(cond);
-      printArmInstr(
-          "b" + condTag, {getLabel(cast<BranchInst>(instr)->getTrueBlock())});
-      printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
-      break;
-    }
+    auto condTag = getCondTagStr(cond->tag);
+    printCmpInstr(cond);
+    printArmInstr(
+        "b" + condTag, {getLabel(cast<BranchInst>(instr)->getTrueBlock())});
+    printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
+    break;
     break;
   }
   case Value::Tag::Jump:
@@ -154,10 +151,12 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Call: {
     auto *callInst = cast<CallInst>(instr);
     assert(callInst->getArgs().size() < 4 && "NYI");
+    // consider float
     for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
       assignToSpecificReg("r" + std::to_string(i), callInst->getArgs()[i]);
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
+    storeRegToMemorySlot("r0", instr);
     break;
   }
   default:
@@ -194,7 +193,9 @@ void ArmWriter::printBinInstr(const std::string &op, Instruction *instr) {
 
 void ArmWriter::printCmpInstr(BinaryInst *instr) {
   // TODO: utilize Operand2 to handle immediate
-  printBinInstr("cmp", instr);
+  auto reg_lhs = loadToReg(instr->getOperand(0));
+  auto reg_rhs = loadToReg(instr->getOperand(1));
+  printArmInstr("cmp", {reg_lhs, reg_rhs});
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
