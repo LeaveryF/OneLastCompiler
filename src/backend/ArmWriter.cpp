@@ -148,9 +148,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto *callInst = cast<CallInst>(instr);
     assert(callInst->getArgs().size() < 4 && "NYI");
     for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
-      printArmInstr(
-          "str",
-          {"r" + std::to_string(i), getStackOper(callInst->getArgs()[i])});
+      assignToSpecificReg("r" + std::to_string(i), callInst->getArgs()[i]);
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
     break;
