@@ -52,7 +52,14 @@ void ArmWriter::printGlobal(GlobalVariable *global) {
   os << global->getName() << ":\n";
   assert(!global->getAllocatedType()->isFloatTy() && "NYI");
   std::function<void(Constant *)> printConst = [&](Constant *val) {
-    if (auto *arr = dyn_cast<ConstantArray>(val)) {
+    if (!val) { // zeroinitializer
+      unsigned size = 4;
+      if (auto *arrTy = dyn_cast<ArrayType>(global->getAllocatedType())) {
+        assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+        size = 4 * arrTy->getSize();
+      }
+      os << ".zero " << size << '\n';
+    } else if (auto *arr = dyn_cast<ConstantArray>(val)) {
       for (auto *elt : arr->values) {
         printConst(elt);
       }
