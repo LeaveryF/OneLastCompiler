@@ -173,15 +173,19 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     printBinInstr("mul", instr);
     break;
   case Value::Tag::Div: {
-    auto reg_lhs = loadToReg(instr->getOperand(0));
-    auto reg_rhs = loadToReg(instr->getOperand(1));
+    auto reg_lhs = regAlloc.claimIntReg(0);
+    loadToSpecificReg(reg_lhs, instr->getOperand(0));
+    auto reg_rhs = regAlloc.claimIntReg(1);
+    loadToSpecificReg(reg_rhs, instr->getOperand(1));
     printArmInstr("bl", {"__aeabi_idiv"});
     storeRegToMemorySlot(reg_lhs, instr);
     break;
   }
   case Value::Tag::Mod: {
-    auto reg_lhs = loadToReg(instr->getOperand(0));
-    auto reg_rhs = loadToReg(instr->getOperand(1));
+    auto reg_lhs = regAlloc.claimIntReg(0);
+    loadToSpecificReg(reg_lhs, instr->getOperand(0));
+    auto reg_rhs = regAlloc.claimIntReg(1);
+    loadToSpecificReg(reg_rhs, instr->getOperand(1));
     printArmInstr("bl", {"__aeabi_idivmod"});
     // 假设idivmod将除法结果放在R0，模结果放在R1
     printArmInstr("mov", {reg_rhs, "r1"}); // 将模结果移动到目标寄存器
