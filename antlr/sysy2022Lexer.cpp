@@ -1,5 +1,5 @@
 
-// Generated from sysy2022.g4 by ANTLR 4.13.1
+// Generated from sysy2022.g4 by ANTLR 4.13.2
 
 
 #include "sysy2022Lexer.h"
@@ -45,7 +45,7 @@ struct Sysy2022LexerStaticData final {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
 static thread_local
 #endif
-Sysy2022LexerStaticData *sysy2022lexerLexerStaticData = nullptr;
+std::unique_ptr<Sysy2022LexerStaticData> sysy2022lexerLexerStaticData = nullptr;
 
 void sysy2022lexerLexerInitialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
@@ -214,7 +214,7 @@ void sysy2022lexerLexerInitialize() {
   for (size_t i = 0; i < count; i++) { 
     staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i), i);
   }
-  sysy2022lexerLexerStaticData = staticData.release();
+  sysy2022lexerLexerStaticData = std::move(staticData);
 }
 
 }

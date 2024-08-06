@@ -1,5 +1,5 @@
 
-// Generated from sysy2022.g4 by ANTLR 4.13.1
+// Generated from sysy2022.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -142,6 +142,7 @@ public:
   class  FuncFParamContext : public antlr4::ParserRuleContext {
   public:
     antlr4::Token *basicType = nullptr;
+    antlr4::Token *isArrayRef = nullptr;
     FuncFParamContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ID();

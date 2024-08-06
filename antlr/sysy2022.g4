@@ -56,7 +56,7 @@ funcDef
 // 1. 数组传地址
 // 2. 多维数组可以部分传递
 funcFParam
-	: basicType=('int' | 'float') ID ('[' ']' ('[' expr ']')*)?
+	: basicType=('int' | 'float') ID isArrayRef='['? ']'? ('[' expr ']')*
 	;
 
 // 语句块
