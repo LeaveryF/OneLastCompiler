@@ -196,13 +196,6 @@ public:
   }
 
   Reg loadToReg(Value *val) {
-    if (auto *arg = dyn_cast<Argument>(val)) {
-      if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
-        assert(!arg->getType()->isFloatTy() && "NYI");
-        return regAlloc.claimIntReg(argNo);
-      }
-      // Otherwise, there should be a memory slot allocated for it.
-    }
     auto reg = regAlloc.allocReg(val);
     loadToSpecificReg(reg, val);
     return reg;

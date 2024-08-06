@@ -80,6 +80,16 @@ void ArmWriter::printFunc(Function *function) {
   // 计算栈空间
   stackSize = 0;
   stackMap.clear();
+
+  // TODO: 保存callee-saved寄存器
+
+  // 给参数分配 stack slot
+  for (auto *arg : function->args) {
+    stackMap[arg] = stackSize;
+    stackSize += 4;
+  }
+
+  // 给指令结果分配 stack slot
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
       if (instr->tag == Value::Tag::Load)
@@ -110,8 +120,13 @@ void ArmWriter::printFunc(Function *function) {
   printArmInstr("mov", {"r11", "sp"});
   printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
 
-  if (function->isBuiltin)
-    olc_unreachable("NYI");
+  // 保存参数到栈
+  assert(function->args.size() < 4 && "NYI");
+  for (unsigned i = 0; i < function->args.size(); i++) {
+    auto reg = regAlloc.claimIntReg(i);
+    storeRegToMemorySlot(reg, function->args[i]);
+  }
+
   for (auto &bb : function->basicBlocks) {
     printBasicBlock(bb);
   }
