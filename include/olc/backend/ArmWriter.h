@@ -32,6 +32,17 @@ class ArmWriter {
     }
   }
 
+  bool isNaiveLogicalOp(Instruction *instr) {
+    auto *cmpInst = dyn_cast<BinaryInst>(instr);
+    if (!cmpInst ||
+        (cmpInst->tag != Value::Tag::Ne && cmpInst->tag != Value::Tag::Eq))
+      return false;
+    auto *rhs = dyn_cast<ConstantValue>(cmpInst->getRHS());
+    if (!rhs || !rhs->isInt() || rhs->getInt() != 0)
+      return false;
+    return true;
+  }
+
 public:
   ArmWriter(std::ostream &os) : os(os) {}
 

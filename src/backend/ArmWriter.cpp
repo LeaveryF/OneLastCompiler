@@ -87,6 +87,17 @@ void ArmWriter::printFunc(Function *function) {
   stackMap.clear();
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
+      if (instr->tag == Value::Tag::Load)
+        continue;
+      if (instr->tag >= Value::Tag::BeginBooleanOp &&
+          instr->tag <= Value::Tag::EndBooleanOp) {
+        // For all br use, do not allocate stack. The codegen is in BranchInst.
+        bool allBrUse = std::all_of(
+            instr->uses.begin(), instr->uses.end(),
+            [](const auto &use) { return isa<BranchInst>(use.user); });
+        if (allBrUse)
+          continue;
+      }
       stackMap[instr] = stackSize;
       if (auto *alloca = dyn_cast<AllocaInst>(instr)) {
         if (auto *arrTy = dyn_cast<ArrayType>(alloca->getAllocatedType())) {
@@ -172,9 +183,29 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Gt:
   case Value::Tag::Eq:
   case Value::Tag::Ne: {
-    // Do nothing, the codegen is in BranchInst
-    for (auto &&[user, idx] : instr->uses) {
-      assert(isa<BranchInst>(user) && "Cmp result must be used by branch");
+    // For all br use, do nothing. The codegen is in BranchInst.
+    bool allBrUse = std::all_of(
+        instr->uses.begin(), instr->uses.end(),
+        [](const auto &use) { return isa<BranchInst>(use.user); });
+    if (allBrUse)
+      break;
+    auto *cmpInst = cast<BinaryInst>(instr);
+    assert(
+        isNaiveLogicalOp(cmpInst) &&
+        "Only support naive logical ops (value NE 0 or value EQ 0)");
+    auto reg_lhs = loadToReg(cmpInst->getLHS());
+    if (cmpInst->tag == Value::Tag::Ne) {
+      // Value Ne 0, Binarization
+      printArmInstr("cmp", {reg_lhs, "#0"});
+      printArmInstr("movne", {reg_lhs, "#1"});
+      storeRegToMemorySlot(reg_lhs, instr);
+    } else if (cmpInst->tag == Value::Tag::Eq) {
+      // Value Eq 0, Logical negation
+      printArmInstr("clz", {reg_lhs, reg_lhs});
+      printArmInstr("lsrs", {reg_lhs, reg_lhs, "#5"});
+      storeRegToMemorySlot(reg_lhs, instr);
+    } else {
+      olc_unreachable("Invalid tag");
     }
     break;
   }
