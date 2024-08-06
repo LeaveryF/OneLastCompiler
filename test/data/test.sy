@@ -1,7 +1,7 @@
-int main() {
-    while (1) {
-        int a = getint();
-        putint(a);
-    }
-    return 0;
+//test div
+int main(){
+    int a, b;
+    a = 10;
+    b = 6;
+    return a % b;
 }
