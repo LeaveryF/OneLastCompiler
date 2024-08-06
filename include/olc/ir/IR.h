@@ -158,7 +158,8 @@ struct Function : User {
       Type *retType, std::string const &fnName, std::vector<Argument *> args)
       : User(Tag::Function, createFuncType(retType, args)), fnName(fnName),
         args(std::move(args)), isBuiltin(false) {
-    basicBlocks.push_back(new BasicBlock(this, "entry"));
+    if (!isBuiltin)
+      basicBlocks.push_back(new BasicBlock(this, "entry"));
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::Function; }

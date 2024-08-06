@@ -92,6 +92,40 @@ public:
 
   virtual std::any
   visitCompUnit(sysy2022Parser::CompUnitContext *ctx) override {
+    // insert builtins
+    std::vector<Function *> builtins{
+        new Function(IntegerType::get(), "getint", {}),
+        new Function(IntegerType::get(), "getch", {}),
+        new Function(
+            IntegerType::get(), "getarray",
+            {new Argument{PointerType::get(IntegerType::get()), "a"}}),
+        new Function(FloatType::get(), "getfloat", {}),
+        new Function(
+            IntegerType::get(), "getfarray",
+            {new Argument{PointerType::get(FloatType::get()), "a"}})
+
+            ,
+        new Function(
+            VoidType::get(), "putint", {new Argument{IntegerType::get(), "a"}}),
+        new Function(
+            VoidType::get(), "putch", {new Argument{IntegerType::get(), "a"}}),
+        new Function(
+            VoidType::get(), "putarray",
+            {new Argument{IntegerType::get(), "n"},
+             new Argument{PointerType::get(IntegerType::get()), "a"}}),
+        new Function(
+            VoidType::get(), "putfloat", {new Argument{FloatType::get(), "a"}}),
+        new Function(
+            VoidType::get(), "putfarray",
+            {new Argument{IntegerType::get(), "n"},
+             new Argument{PointerType::get(FloatType::get()), "a"}})};
+
+    for (auto *func : builtins) {
+      func->isBuiltin = true;
+      curModule->addFunction(func);
+      symbolTable.insert(func->fnName, func);
+    }
+
     return visitChildren(ctx);
   }
 

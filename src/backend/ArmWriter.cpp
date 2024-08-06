@@ -79,6 +79,9 @@ void ArmWriter::printGlobal(GlobalVariable *global) {
 }
 
 void ArmWriter::printFunc(Function *function) {
+  if (function->isBuiltin)
+    return;
+
   curFunction = function;
   os << function->fnName << ":\n";
 
