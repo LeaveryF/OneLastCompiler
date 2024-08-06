@@ -190,22 +190,28 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     if (allBrUse)
       break;
     auto *cmpInst = cast<BinaryInst>(instr);
-    assert(
-        isNaiveLogicalOp(cmpInst) &&
-        "Only support naive logical ops (value NE 0 or value EQ 0)");
-    auto reg_lhs = loadToReg(cmpInst->getLHS());
-    if (cmpInst->tag == Value::Tag::Ne) {
-      // Value Ne 0, Binarization
-      printArmInstr("cmp", {reg_lhs, "#0"});
-      printArmInstr("movne", {reg_lhs, "#1"});
-      storeRegToMemorySlot(reg_lhs, instr);
-    } else if (cmpInst->tag == Value::Tag::Eq) {
-      // Value Eq 0, Logical negation
-      printArmInstr("clz", {reg_lhs, reg_lhs});
-      printArmInstr("lsrs", {reg_lhs, reg_lhs, "#5"});
-      storeRegToMemorySlot(reg_lhs, instr);
+    if (isNaiveLogicalOp(cmpInst)) {
+      auto reg_lhs = loadToReg(cmpInst->getLHS());
+      if (cmpInst->tag == Value::Tag::Ne) {
+        // Value Ne 0, Binarization
+        printArmInstr("cmp", {reg_lhs, "#0"});
+        printArmInstr("movne", {reg_lhs, "#1"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else if (cmpInst->tag == Value::Tag::Eq) {
+        // Value Eq 0, Logical negation
+        printArmInstr("clz", {reg_lhs, reg_lhs});
+        printArmInstr("lsrs", {reg_lhs, reg_lhs, "#5"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else {
+        olc_unreachable("Invalid tag");
+      }
     } else {
-      olc_unreachable("Invalid tag");
+      auto reg_lhs = loadToReg(cmpInst->getLHS());
+      auto reg_rhs = loadToReg(cmpInst->getRHS());
+      printArmInstr("cmp", {reg_lhs, reg_rhs});
+      printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
+      printArmInstr("mov" + getCondTagStr(cmpInst->tag) + "s", {reg_lhs, "#0"});
+      storeRegToMemorySlot(reg_lhs, instr);
     }
     break;
   }
