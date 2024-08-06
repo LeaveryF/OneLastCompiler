@@ -32,6 +32,25 @@ class ArmWriter {
     }
   }
 
+  Value::Tag getNotCond(Value::Tag tag) {
+    switch (tag) {
+    case Value::Tag::Eq:
+      return Value::Tag::Ne;
+    case Value::Tag::Ne:
+      return Value::Tag::Eq;
+    case Value::Tag::Lt:
+      return Value::Tag::Ge;
+    case Value::Tag::Le:
+      return Value::Tag::Gt;
+    case Value::Tag::Gt:
+      return Value::Tag::Le;
+    case Value::Tag::Ge:
+      return Value::Tag::Lt;
+    default:
+      olc_unreachable("Invalid tag");
+    }
+  }
+
   bool isNaiveLogicalOp(Instruction *instr) {
     auto *cmpInst = dyn_cast<BinaryInst>(instr);
     if (!cmpInst ||

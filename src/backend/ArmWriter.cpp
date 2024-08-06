@@ -217,7 +217,8 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
       auto reg_rhs = loadToReg(cmpInst->getRHS());
       printArmInstr("cmp", {reg_lhs, reg_rhs});
       printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
-      printArmInstr("mov" + getCondTagStr(cmpInst->tag) + "s", {reg_lhs, "#0"});
+      printArmInstr(
+          "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
       storeRegToMemorySlot(reg_lhs, instr);
     }
     break;
