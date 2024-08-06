@@ -334,17 +334,23 @@ public:
     auto *retType = convertType(ctx->funcType->getText());
     std::vector<Argument *> args;
     std::vector<std::vector<int>> argShapes;
+    std::vector<bool> isArray;
 
     // 处理形参
     for (const auto &param : ctx->funcFParam()) {
       auto *type = convertType(param->basicType->getText());
       argShapes.push_back({});
+      isArray.push_back(false);
+      int size = 1;
       for (auto *dim : param->expr()) {
         argShapes.back().push_back(constFolder.resolveInt(dim));
-        type = ArrayType::get(type, argShapes.back().back());
+        // type = ArrayType::get(type, argShapes.back().back());
+        size *= argShapes.back().back();
       }
-      if (param->expr().size() > 0) {
+      if (param->isArrayRef) {
+        type = ArrayType::get(type, size);
         type = PointerType::get(type);
+        isArray.back() = true;
       }
       args.push_back(new Argument{type, param->ID()->getText()});
     }
@@ -362,7 +368,7 @@ public:
     // 参数加到符号表中 生成alloca和store指令
     for (unsigned i = 0; i < args.size(); i++) {
       auto &arg = args[i];
-      if (argShapes[i].empty()) {
+      if (!isArray[i]) {
         Value *allocaInst = curBasicBlock->create<AllocaInst>(arg->getType());
         curBasicBlock->create<StoreInst>(arg, allocaInst);
         symbolTable.insert(arg->argName, allocaInst, argShapes[i]);
