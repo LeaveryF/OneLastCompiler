@@ -3,7 +3,6 @@
 #include <iostream>
 #include <set>
 #include <unordered_map>
-#include <sstream>
 
 namespace olc {
 
@@ -78,7 +77,11 @@ public:
   void printBinInstr(const std::string &op, Instruction *instr);
   void printCmpInstr(BinaryInst *instr);
   std::string getStackOper(Value *val);
-  std::string getImme(ConstantValue *val);
+  std::string getImme(uint32_t imm);
+  std::string getImme(int32_t imm) {
+    return getImme(static_cast<uint32_t>(imm));
+  }
+  std::string getImme(float imm);
   std::string getLabel(BasicBlock *bb);
 
   struct NaiveAllocater;
@@ -171,25 +174,29 @@ public:
   void loadToSpecificReg(Reg const &reg, Value *val) {
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       if (constVal->isInt()) {
-        printArmInstr("ldr", {reg, "=" + std::to_string(constVal->getInt())});
+        auto imm = static_cast<uint32_t>(constVal->getInt());
+        if (imm < 4096) {
+          printArmInstr("mov", {reg, "#" + std::to_string(imm)});
+        } else {
+          printArmInstr("movw", {reg, "#" + std::to_string(imm & 0xffff)});
+          printArmInstr("movt", {reg, "#" + std::to_string(imm >> 16)});
+        }
       } else {
-        // get hex of float
+        // reinterpret float as int
         union {
           float f;
           uint32_t i;
         } u;
         u.f = constVal->getFloat();
-        std::stringstream ss;
-        ss << std::hex << u.i;
         auto reg_int = regAlloc.allocIntReg();
-        printArmInstr("ldr", {reg_int, "=0x" + ss.str()});
+        printArmInstr("movw", {reg_int, "#" + std::to_string(u.i & 0xffff)});
+        printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
         printArmInstr("vmov.f32", {reg, reg_int});
       }
     } else {
       if (auto *ld = dyn_cast<LoadInst>(val)) {
         val = ld->getPointer();
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-          // printArmInstr("ldr", {reg, "=" + gv->getName()});
           printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
           printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
           printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
@@ -203,7 +210,6 @@ public:
         }
       } else {
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-          // printArmInstr("ldr", {reg, "=" + gv->getName()});
           printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
           printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {

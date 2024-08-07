@@ -156,14 +156,8 @@ void ArmWriter::printFunc(Function *function) {
   if (stackSize >= 256) {
     // 使用一个一定不会与参数寄存器冲突的寄存器用于加载
     auto reg_size = regAlloc.allocIntReg();
-    // printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
-    if (stackSize > 65535) {
-      printArmInstr(
-          "movw", {reg_size, "#" + std::to_string(stackSize & 0xffff)});
-      printArmInstr("movt", {reg_size, "#" + std::to_string(stackSize >> 16)});
-    } else {
-      printArmInstr("mov", {reg_size, "#" + std::to_string(stackSize)});
-    }
+    printArmInstr("movw", {reg_size, "#" + std::to_string(stackSize & 0xffff)});
+    printArmInstr("movt", {reg_size, "#" + std::to_string(stackSize >> 16)});
     printArmInstr("sub", {"sp", "sp", reg_size});
   } else {
     printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
@@ -210,7 +204,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto reg_ptr = loadToReg(gep->getPointer());
     if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
       int offset = 4 * constIndex->getInt();
-      printArmInstr("add", {reg_ptr, reg_ptr, "#" + std::to_string(offset)});
+      printArmInstr("add", {reg_ptr, reg_ptr, getImme(offset)});
     } else {
       std::string reg_offset = loadToReg(gep->getIndex());
       printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
@@ -405,29 +399,33 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
 std::string ArmWriter::getStackOper(Value *val) {
   if (auto *ld = dyn_cast<LoadInst>(val))
     val = ld->getPointer();
-  if (int offset = stackMap.at(val); offset < 4096) {
-    return "[sp, #" + std::to_string(stackMap.at(val)) + "]";
+  return "[sp, " + getImme(stackMap[val]) + "]";
+}
+
+std::string ArmWriter::getImme(uint32_t imm) {
+  if (imm < 4096) {
+    return "#" + std::to_string(imm);
   } else {
-    auto reg_offset = regAlloc.allocIntReg();
-    // printArmInstr("ldr", {reg_offset, "=" + std::to_string(offset)});
-    if (offset > 65535) {
-      printArmInstr(
-          "movw", {reg_offset, "#" + std::to_string(offset & 0xffff)});
-      printArmInstr("movt", {reg_offset, "#" + std::to_string(offset >> 16)});
-    } else {
-      printArmInstr("mov", {reg_offset, "#" + std::to_string(offset)});
-    }
-    return "[sp, " + reg_offset.abiName() + "]";
+    auto reg = regAlloc.allocIntReg();
+    printArmInstr("movw", {reg, "#" + std::to_string(imm & 0xffff)});
+    printArmInstr("movt", {reg, "#" + std::to_string(imm >> 16)});
+    return reg.abiName();
   }
 }
 
-std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
-  if (val->isInt()) {
-    return "#" + std::to_string(val->getInt());
-  } else {
-    // TODO: ensure it is correct
-    return "#" + std::to_string(val->getFloat());
-  }
+std::string ArmWriter::getImme(float imm) {
+  // reinterpret and load int
+  union {
+    float f;
+    uint32_t i;
+  } u;
+  u.f = imm;
+  auto reg_int = regAlloc.allocIntReg();
+  printArmInstr("movw", {reg_int, "#" + std::to_string(u.i & 0xffff)});
+  printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
+  auto reg_flt = regAlloc.allocFloatReg();
+  printArmInstr("vmov.f32", {reg_flt, reg_int});
+  return reg_flt.abiName();
 }
 
 std::string ArmWriter::getLabel(BasicBlock *bb) {
