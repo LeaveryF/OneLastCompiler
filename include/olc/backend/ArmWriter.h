@@ -12,6 +12,7 @@ class ArmWriter {
   std::unordered_map<BasicBlock *, int> labelMap;
   Function *curFunction = nullptr;
   int stackSize;
+  int floatCnt = 0;
 
   std::string getCondTagStr(Value::Tag tag) {
     switch (tag) {
@@ -168,7 +169,17 @@ public:
 
   void loadToSpecificReg(Reg const &reg, Value *val) {
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
-      printArmInstr("mov", {reg, getImme(constVal)});
+      if (constVal->isInt()) {
+        if (constVal->getInt() < 65536) {
+          printArmInstr("mov", {reg, "#" + std::to_string(constVal->getInt())});
+        } else {
+          printArmInstr("ldr", {reg, "=" + std::to_string(constVal->getInt())});
+        }
+      } else {
+        printArmInstr("vmov.32", {reg, ".f_" + std::to_string(floatCnt)});
+        os << ".f_" + std::to_string(floatCnt++) << '\n';
+        os << ".float " << constVal->getFloat() << '\n';
+      }
     } else {
       if (auto *ld = dyn_cast<LoadInst>(val)) {
         val = ld->getPointer();
@@ -220,7 +231,7 @@ public:
 
   void storeRegToMemorySlot(const Reg &reg, Value *val) {
     assert(!isa<AllocaInst>(val) && "Alloca has no memory slot.");
-    printArmInstr("str", {reg, getStackOper(val)});
+    printArmInstr(reg.isFloat ? "vstr.32" : "str", {reg, getStackOper(val)});
   }
 
   void storeRegToAddress(const Reg &reg, Value *ptr) {

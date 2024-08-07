@@ -90,8 +90,14 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
         binExpr && binExpr->isCmpOp()) {
       return binExpr;
     } else {
-      return curBasicBlock->create<BinaryInst>(
-          Value::Tag::Ne, expr, new ConstantValue(0));
+      // 隐式类型转换
+      if (expr->getType()->isIntegerTy()) {
+        return curBasicBlock->create<BinaryInst>(
+            Value::Tag::Ne, expr, new ConstantValue(0));
+      } else {
+        return curBasicBlock->create<BinaryInst>(
+            Value::Tag::Ne, expr, new ConstantValue(0.f));
+      }
     }
   }
 
@@ -742,6 +748,7 @@ public:
     std::vector<Value *> args;
     // 处理实参
     for (int i = 0; i < ctx->expr().size(); ++i) {
+      // TODO: array param
       auto *arg = createRValue(ctx->expr(i), callee->args[i]->getType());
       args.push_back(arg);
     }
@@ -759,13 +766,25 @@ public:
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
       auto *subVal = createRValue(ctx->unaryExpr());
-      Value *result = curBasicBlock->create<BinaryInst>(
-          Value::Tag::Sub, new ConstantValue(0), subVal);
+      Value *result = nullptr;
+      if (subVal->getType()->isFloatTy()) {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Sub, new ConstantValue(0.f), subVal);
+      } else {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Sub, new ConstantValue(0), subVal);
+      }
       valueMap[ctx] = result;
     } else {
       auto *subVal = createRValue(ctx->unaryExpr(), IntegerType::get());
-      Value *result = curBasicBlock->create<BinaryInst>(
-          Value::Tag::Eq, subVal, new ConstantValue(0));
+      Value *result = nullptr;
+      if (subVal->getType()->isIntegerTy()) {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Eq, subVal, new ConstantValue(0));
+      } else {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Eq, subVal, new ConstantValue(0.f));
+      }
       valueMap[ctx] = result;
     }
     return {};

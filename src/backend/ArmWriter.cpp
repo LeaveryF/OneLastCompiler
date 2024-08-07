@@ -223,17 +223,21 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::IntToFloat: {
     auto *i2fInst = cast<IntToFloatInst>(instr);
     auto reg = regAlloc.claimIntReg(0);
-    loadToSpecificReg(reg, i2fInst->getIntValue());
-    printArmInstr("bl", {"__aeabi_i2f"});
-    storeRegToMemorySlot(regAlloc.claimFloatReg(0), instr);
+    printArmInstr("ldr", {reg, getStackOper(i2fInst)});
+    auto freg = regAlloc.claimFloatReg(0);
+    printArmInstr("vldr.32", {freg, "[" + reg.abiName() + "]"});
+    printArmInstr("vcvt.f32.u32", {freg, freg});
+    storeRegToMemorySlot(freg, instr);
     break;
   }
   case Value::Tag::FloatToInt: {
     auto *f2iInst = cast<FloatToIntInst>(instr);
-    auto reg = regAlloc.claimFloatReg(0);
-    loadToSpecificReg(reg, f2iInst->getFloatValue());
-    printArmInstr("bl", {"__aeabi_f2iz"});
-    storeRegToMemorySlot(regAlloc.claimIntReg(0), instr);
+    auto reg = regAlloc.claimIntReg(0);
+    printArmInstr("ldr", {reg, getStackOper(f2iInst)});
+    auto freg = regAlloc.claimFloatReg(0);
+    printArmInstr("vldr.32", {freg, "[" + reg.abiName() + "]"});
+    printArmInstr("vcvt.u32.f32", {freg, freg});
+    storeRegToMemorySlot(freg, instr);
     break;
   }
   case Value::Tag::Lt:
