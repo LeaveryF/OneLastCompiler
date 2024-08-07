@@ -118,7 +118,13 @@ void ArmWriter::printFunc(Function *function) {
   }
   printArmInstr("push", {"{r11, lr}"});
   printArmInstr("mov", {"r11", "sp"});
-  printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
+  if (stackSize > 1024) {
+    auto reg_size = regAlloc.allocIntReg();
+    printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
+    printArmInstr("sub", {"sp", "sp", reg_size});
+  } else {
+    printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
+  }
 
   // 保存参数到栈
   assert(function->args.size() < 4 && "NYI");
