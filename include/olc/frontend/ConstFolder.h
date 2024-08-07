@@ -66,7 +66,8 @@ public:
       return cast<ConstantValue>(val);
 
     // 若为数组, 则需要计算偏移量
-    auto *arr = cast<ConstantArray>(val);
+    auto *gv = cast<GlobalVariable>(val);
+    auto *arr = cast<ConstantArray>(gv->initializer);
     auto &shape = symbolTable.lookupShape(varName);
     auto indices = resolveIntList(ctx->expr());
     int offset = 0;

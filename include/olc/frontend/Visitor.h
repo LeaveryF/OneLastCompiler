@@ -183,44 +183,8 @@ public:
           size *= dimSizes.back();
         }
         Type *arrayType = ArrayType::get(type, size);
-        if (ctx->isConst) {
-          // 常量数组
-          std::vector<Constant *> values(size, nullptr);
-          int index = 0;
-
-          std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
-          dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
-            for (auto *val : ctx->initVal()) {
-              if (val->expr()) {
-                values[index++] = constFolder.resolve(val->expr());
-              } else {
-                int match = 1, matchDim = dimSizes.size();
-                while (--matchDim > dim) {
-                  if (index % (match * dimSizes[matchDim]) == 0) {
-                    match *= dimSizes[matchDim];
-                  } else {
-                    break;
-                  }
-                }
-                if (matchDim == dimSizes.size() - 1) {
-                  olc_unreachable("初始化列表错误");
-                }
-                dfs(val, dim + 1, index + match);
-              }
-            }
-            while (index < len) {
-              if (type->isFloatTy()) {
-                values[index++] = new ConstantValue(0.f);
-              } else {
-                values[index++] = new ConstantValue(0);
-              }
-            }
-          };
-          dfs(varDef->initVal(), 0, size);
-          symbolTable.insert(
-              varName, new ConstantArray(arrayType, values), dimSizes);
-        } else if (isGlobal) {
-          // 全局数组
+        if (ctx->isConst || isGlobal) {
+          // 全局数组 / 常量数组
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
             std::vector<Constant *> values(size, nullptr);
