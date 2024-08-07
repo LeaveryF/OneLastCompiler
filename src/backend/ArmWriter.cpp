@@ -199,6 +199,22 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     storeRegToMemorySlot(reg_rhs, instr);
     break;
   }
+  case Value::Tag::IntToFloat: {
+    auto *i2fInst = cast<IntToFloatInst>(instr);
+    auto reg = regAlloc.claimIntReg(0);
+    loadToSpecificReg(reg, i2fInst->getIntValue());
+    printArmInstr("bl", {"__aeabi_i2f"});
+    storeRegToMemorySlot(regAlloc.claimFloatReg(0), instr);
+    break;
+  }
+  case Value::Tag::FloatToInt: {
+    auto *f2iInst = cast<FloatToIntInst>(instr);
+    auto reg = regAlloc.claimFloatReg(0);
+    loadToSpecificReg(reg, f2iInst->getFloatValue());
+    printArmInstr("bl", {"__aeabi_f2iz"});
+    storeRegToMemorySlot(regAlloc.claimIntReg(0), instr);
+    break;
+  }
   case Value::Tag::Lt:
   case Value::Tag::Le:
   case Value::Tag::Ge:

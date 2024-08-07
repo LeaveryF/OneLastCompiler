@@ -65,22 +65,49 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
     return valueMap.at(ctx);
   }
 
-  Value *createRValue(antlr4::ParserRuleContext *ctx) {
+  Value *
+  createRValue(antlr4::ParserRuleContext *ctx, Type *targetType = nullptr) {
     visit(ctx);
+    auto *rVal = valueMap.at(ctx);
     if (isLValueMap[ctx]) {
-      return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
+      return curBasicBlock->create<LoadInst>(rVal);
     }
-    return valueMap.at(ctx);
+    if (targetType) {
+      if (targetType->isFloatTy() && rVal->getType()->isIntegerTy()) {
+        rVal = curBasicBlock->create<IntToFloatInst>(rVal);
+      } else if (targetType->isIntegerTy() && rVal->getType()->isFloatTy()) {
+        rVal = curBasicBlock->create<FloatToIntInst>(rVal);
+      } else {
+        ; // do nothing
+      }
+    }
+    return rVal;
   }
 
   Value *createCondValue(antlr4::ParserRuleContext *ctx) {
-    auto *expr = createRValue(ctx);
+    auto *expr = createRValue(ctx, IntegerType::get());
     if (auto *binExpr = dyn_cast<BinaryInst>(expr);
         binExpr && binExpr->isCmpOp()) {
       return binExpr;
     } else {
       return curBasicBlock->create<BinaryInst>(
           Value::Tag::Ne, expr, new ConstantValue(0));
+    }
+  }
+
+  void typeConversion(Value **left, Value **right) {
+    if ((*left)->getType()->isIntegerTy() &&
+            (*right)->getType()->isIntegerTy() ||
+        (*left)->getType()->isFloatTy() && (*right)->getType()->isFloatTy()) {
+      return;
+    }
+    if ((*left)->getType()->isIntegerTy()) {
+      *left = curBasicBlock->create<IntToFloatInst>(*left);
+      return;
+    }
+    if ((*right)->getType()->isIntegerTy()) {
+      *right = curBasicBlock->create<IntToFloatInst>(*right);
+      return;
     }
   }
 
@@ -240,7 +267,7 @@ public:
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
-                  values[index++] = createRValue(val->expr());
+                  values[index++] = createRValue(val->expr(), type);
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
@@ -299,7 +326,7 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            Value *initVal = createRValue(varDef->initVal());
+            Value *initVal = createRValue(varDef->initVal()->expr(), type);
             curBasicBlock->create<StoreInst>(initVal, allocaInst);
           }
         }
@@ -314,12 +341,7 @@ public:
   }
 
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
-    if (ctx->expr()) {
-      valueMap[ctx] = createRValue(ctx->expr());
-    } else {
-      // TODO: 处理初始化列表
-      olc_unreachable("NYI");
-    }
+    olc_unreachable("Never");
     return {};
   }
 
@@ -425,10 +447,12 @@ public:
     if (earlyExit)
       return {};
 
-    // 获取右值
-    auto *rVal = createRValue(ctx->expr());
-    // 创建指令
+    // 获取左值
     auto *lVal = createLValue(ctx->lVal());
+    // 获取右值
+    auto *rVal =
+        createRValue(ctx->expr(), lVal->getType()->getPointerEltType());
+    // 创建指令
     curBasicBlock->create<StoreInst>(rVal, lVal);
     return {};
   }
@@ -620,7 +644,7 @@ public:
     earlyExit = true;
     if (ctx->expr()) {
       // 获取子操作数
-      auto *retVal = createRValue(ctx->expr());
+      auto *retVal = createRValue(ctx->expr(), curFunction->getReturnType());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
     } else {
@@ -634,11 +658,11 @@ public:
   //--------------------------------------------------------------------------
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
-    // TODO: 类型转换
     // 获取左操作数
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     auto *right = createRValue(ctx->expr(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "+") {
@@ -658,6 +682,7 @@ public:
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     auto *right = createRValue(ctx->expr(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "*") {
@@ -716,8 +741,8 @@ public:
     auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
     std::vector<Value *> args;
     // 处理实参
-    for (const auto &argCtx : ctx->expr()) {
-      auto *arg = createRValue(argCtx);
+    for (int i = 0; i < ctx->expr().size(); ++i) {
+      auto *arg = createRValue(ctx->expr(i), callee->args[i]->getType());
       args.push_back(arg);
     }
     auto *callInst = curBasicBlock->create<CallInst>(callee, args);
@@ -738,7 +763,7 @@ public:
           Value::Tag::Sub, new ConstantValue(0), subVal);
       valueMap[ctx] = result;
     } else {
-      auto *subVal = createRValue(ctx->unaryExpr());
+      auto *subVal = createRValue(ctx->unaryExpr(), IntegerType::get());
       Value *result = curBasicBlock->create<BinaryInst>(
           Value::Tag::Eq, subVal, new ConstantValue(0));
       valueMap[ctx] = result;
@@ -765,7 +790,7 @@ public:
 
     std::vector<Value *> indices;
     for (auto *expr : ctx->expr()) {
-      indices.push_back(createRValue(expr));
+      indices.push_back(createRValue(expr, IntegerType::get()));
     }
     Value *offset = new ConstantValue(0);
     for (int i = indices.size(); i--;) {
@@ -794,6 +819,7 @@ public:
     auto *left = createRValue(ctx->cond(0));
     // 获取右操作数
     auto *right = createRValue(ctx->cond(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "==") {
@@ -878,6 +904,7 @@ public:
     auto *left = createRValue(ctx->cond(0));
     // 获取右操作数
     auto *right = createRValue(ctx->cond(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "<") {
