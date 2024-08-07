@@ -29,7 +29,11 @@ void AssemblyWriter::printGlobal(GlobalVariable *global) {
 void AssemblyWriter::printFunc(Function *function) {
   nameManager.reset();
 
-  os << "define @" << function->fnName;
+  if (function->isBuiltin) {
+    os << "declare builtin @" << function->fnName;
+  } else {
+    os << "define @" << function->fnName;
+  }
 
   // arguments
   os << "(";
@@ -43,13 +47,15 @@ void AssemblyWriter::printFunc(Function *function) {
   os << ") -> ";
   function->getReturnType()->print(os);
 
-  os << " {\n";
-  if (function->isBuiltin)
-    olc_unreachable("NYI");
-  for (auto &bb : function->basicBlocks) {
-    printBasicBlock(bb);
+  if (function->isBuiltin) {
+    os << "\n";
+  } else {
+    os << " {\n";
+    for (auto &bb : function->basicBlocks) {
+      printBasicBlock(bb);
+    }
+    os << "}\n";
   }
-  os << "}\n";
 }
 
 void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {

@@ -10,7 +10,7 @@
 #include <sysy2022BaseVisitor.h>
 
 #include <olc/ir/IR.h>
-#include <olc/utils/symtab.h>
+#include <olc/utils/SymbolTable.h>
 
 #include <olc/debug.h>
 
@@ -18,11 +18,42 @@ using namespace olc;
 
 class ConstFoldVisitor : public sysy2022BaseVisitor {
   // 符号表
-  SymTab<std::string, Value *> &symbolTable;
+  SymbolTable &symbolTable;
 
 public:
-  ConstFoldVisitor(SymTab<std::string, Value *> &symbolTable)
-      : symbolTable(symbolTable) {}
+  ConstFoldVisitor(SymbolTable &symbolTable) : symbolTable(symbolTable) {}
+
+  ConstantValue *resolve(antlr4::ParserRuleContext *ctx) {
+    return std::any_cast<ConstantValue *>(visit(ctx));
+  }
+
+  int resolveInt(antlr4::ParserRuleContext *ctx) {
+    return resolve(ctx)->getInt();
+  }
+
+  float resolveFloat(antlr4::ParserRuleContext *ctx) {
+    return resolve(ctx)->getFloat();
+  }
+
+  std::vector<int>
+  resolveIntList(std::vector<sysy2022Parser::ExprContext *> ctxs) {
+    std::vector<int> result;
+    for (auto *ctx : ctxs) {
+      result.push_back(resolveInt(ctx));
+    }
+    return result;
+  }
+
+  Constant *resolveName(std::string name) {
+    auto *val = symbolTable.lookup(name);
+    if (auto *global = dyn_cast<GlobalVariable>(val)) {
+      return cast<Constant>(global->getInitializer());
+    } else if (auto *konst = dyn_cast<Constant>(val)) {
+      return konst;
+    } else {
+      olc_unreachable("Invalid type for constant value");
+    }
+  }
 
   // 处理常量值,类似于:
   // const int b = 10;
@@ -30,23 +61,23 @@ public:
   virtual std::any visitLVal(sysy2022Parser::LValContext *ctx) override {
     // 获取变量名
     std::string varName = ctx->ID()->getText();
-    // 获取变量值, 若语义正确获得的应为常量全局变量.
-    // FIXME: cast!
-    // TODO: array!
-    ConstantValue *result = cast<ConstantValue>(
-        cast<GlobalVariable>(symbolTable.lookup(varName))->getInitializer());
-    if (result) {
-      if (result->isInt()) {
-        result = new ConstantValue(result->getInt());
-      } else if (result->isFloat()) {
-        result = new ConstantValue(result->getFloat());
-      } else {
-        olc_unreachable("Invalid type for constant value");
+    Constant *val = resolveName(varName);
+    if (ctx->expr().empty())
+      return cast<ConstantValue>(val);
+
+    // 若为数组, 则需要计算偏移量
+    auto *arr = cast<ConstantArray>(val);
+    auto &shape = symbolTable.lookupShape(varName);
+    auto indices = resolveIntList(ctx->expr());
+    int offset = 0;
+    for (int i = 0; i < indices.size(); i++) {
+      int stride = 1;
+      for (int j = i + 1; j < indices.size(); j++) {
+        stride *= shape[j];
       }
-    } else {
-      olc_unreachable("Variable not found");
+      offset += indices[i] * stride;
     }
-    return result;
+    return cast<ConstantValue>(arr->values.at(offset));
   }
 
   virtual std::any
@@ -68,6 +99,10 @@ public:
           result = new ConstantValue(left->getInt() + right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() + right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() + right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() + right->getInt());
         } else {
           olc_unreachable("Invalid type for add operation");
         }
@@ -76,6 +111,10 @@ public:
           result = new ConstantValue(left->getInt() - right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() - right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() - right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() - right->getInt());
         } else {
           olc_unreachable("Invalid type for sub operation");
         }
@@ -105,6 +144,10 @@ public:
           result = new ConstantValue(left->getInt() * right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() * right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() * right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() * right->getInt());
         } else {
           olc_unreachable("Invalid type for mul operation");
         }
@@ -113,6 +156,10 @@ public:
           result = new ConstantValue(left->getInt() / right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() / right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() / right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() / right->getInt());
         } else {
           olc_unreachable("Invalid type for div operation");
         }

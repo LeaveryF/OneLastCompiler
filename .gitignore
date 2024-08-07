@@ -15,3 +15,7 @@ crash-*
 
 # VS CMake personal config
 CMakeSettings.json
+
+# input output test case data
+test/**/*.in
+test/**/*.out

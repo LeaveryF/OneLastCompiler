@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include <antlr4-runtime.h>
 #include <sysy2022Lexer.h>
@@ -22,7 +23,6 @@ using namespace antlr4;
 using namespace olc;
 
 int main(int argc, const char *argv[]) {
-  SymTab<std::string, Value *> symbolTable;
   // 多文件批量测试
   // std::ifstream testin("../test/data.txt");
   // std::string fname;
@@ -36,9 +36,15 @@ int main(int argc, const char *argv[]) {
   //   std::ifstream fin("../test/" + fname);
 
   // 单文件测试
-  std::ifstream fin("../test/data/test.sy");
+  std::string filename;
+  if (argc <= 1) {
+    filename = "../test/data/test.sy";
+  } else {
+    filename = argv[1];
+  }
+  std::ifstream fin{filename};
   if (!fin) {
-    std::cout << "File not found" << std::endl;
+    std::cout << "File not found: " << filename << std::endl;
     return 1;
   }
   ANTLRInputStream input(fin);
@@ -57,38 +63,44 @@ int main(int argc, const char *argv[]) {
   sysy2022Parser parser(&tokens);
   sysy2022Parser::CompUnitContext *tree = parser.compUnit();
 
-  // 标准输出
-  AssemblyWriter asmWriter{std::cout};
+  AssemblyWriter asmWriter{std::cerr};
 
   // 输出到logs.txt
   // AssemblyWriter asmWriter{logout};
 
   auto *mod = new Module{};
+  SymbolTable symbolTable;
   ConstFoldVisitor constFolder(symbolTable);
   CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
   visitor.visitCompUnit(tree);
 
   asmWriter.printModule(mod);
 
-  ArmWriter armWriter{std::cout};
+  std::stringstream ss;
+  ArmWriter armWriter{ss};
   armWriter.printModule(mod);
 
-  LivenessAnalysis liveness;
-  liveness.runOnFunction(mod->getFunction("main"));
+  std::cout << ss.str();
+  std::cerr << ss.str();
+  std::cerr << "============\n";
 
-  auto getValName = [&](Value *val) {
-    assert(val->isDefVar() && "Value is not a variable");
-    if (auto *inst = dyn_cast<Instruction>(val)) {
-      return asmWriter.nameManager[inst];
-    } else {
-      return cast<Argument>(val)->argName;
-    }
-  };
+  // LivenessAnalysis liveness;
+  // liveness.runOnFunction(mod->getFunction("main"));
 
-  for (auto &&[val, intv] : liveness.liveIntervals) {
-    std::cout << "Var %" << getValName(val) << " live interval: [" << intv.first
-              << ", " << intv.second << "]\n";
-  }
+  // auto getValName = [&](Value *val) {
+  //   assert(val->isDefVar() && "Value is not a variable");
+  //   if (auto *inst = dyn_cast<Instruction>(val)) {
+  //     return asmWriter.nameManager[inst];
+  //   } else {
+  //     return cast<Argument>(val)->argName;
+  //   }
+  // };
+
+  // for (auto &&[val, intv] : liveness.liveIntervals) {
+  //   std::cout << "Var %" << getValName(val) << " live interval: [" <<
+  //   intv.first
+  //             << ", " << intv.second << "]\n";
+  // }
 
   return 0;
 }

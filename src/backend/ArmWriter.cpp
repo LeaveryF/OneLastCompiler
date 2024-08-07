@@ -1,51 +1,153 @@
 #include <olc/backend/ArmWriter.h>
 
-#include <algorithm>
-
 namespace olc {
+
+ArmWriter::Reg::~Reg() {
+  if (id < 0)
+    return;
+  if (isFloat) {
+    alloc->fltRegs.insert(id);
+  } else {
+    alloc->intRegs.insert(id);
+  }
+}
+
+ArmWriter::Reg::Reg(Reg &&other)
+    : isFloat(other.isFloat), id(other.id), alloc(other.alloc) {
+  other.id = -1;
+}
+
+ArmWriter::Reg &ArmWriter::Reg::operator=(Reg &&other) {
+  isFloat = other.isFloat;
+  id = other.id;
+  alloc = other.alloc;
+  other.id = -1;
+  return *this;
+}
 
 void ArmWriter::printModule(Module *module) {
   os << ".data\n";
   for (auto &global : module->globals) {
-    printGlobal(global);
+    printGlobalData(global);
+  }
+
+  os << ".bss\n";
+  for (auto &global : module->globals) {
+    printGlobalBss(global);
   }
 
   os << ".text\n";
+  for (auto &func : module->functions) {
+    os << ".global " << func->fnName << '\n';
+  }
   for (auto &func : module->functions) {
     printFunc(func);
   }
 }
 
-void ArmWriter::printGlobal(GlobalVariable *global) {
-  // TODO: data section
-  os << "\n";
+void ArmWriter::printGlobalData(GlobalVariable *global) {
+  if (!global->getInitializer())
+    return;
+
+  os << global->getName() << ":\n";
+  assert(!global->getAllocatedType()->isFloatTy() && "NYI");
+  std::function<void(Constant *)> printConstData = [&](Constant *val) {
+    assert(val && "Invalid initializer");
+    if (auto *arr = dyn_cast<ConstantArray>(val)) {
+      for (auto *elt : arr->values) {
+        printConstData(elt);
+      }
+      os << ".size " << global->getName() << ", " << arr->values.size() * 4
+         << '\n';
+    } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+      if (constVal->isInt()) {
+        os << ".word " << constVal->getInt() << '\n';
+      } else {
+        olc_unreachable("HEX float NYI");
+      }
+    } else {
+      olc_unreachable("NYI");
+    }
+  };
+  printConstData(global->getInitializer());
+}
+
+void ArmWriter::printGlobalBss(GlobalVariable *global) {
+  if (global->getInitializer()) {
+    return;
+  }
+  os << global->getName() << ":\n";
+  unsigned size = 4;
+  if (auto *arrTy = dyn_cast<ArrayType>(global->getAllocatedType())) {
+    assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+    size = 4 * arrTy->getSize();
+  }
+  os << ".skip " << size << '\n';
 }
 
 void ArmWriter::printFunc(Function *function) {
-  if (function->fnName == "main") {
-    os << "_start:\n";
-  } else {
-    os << function->fnName << ":\n";
-  }
+  if (function->isBuiltin)
+    return;
+
+  curFunction = function;
+  os << function->fnName << ":\n";
 
   // 计算栈空间
   stackSize = 0;
-  curReg = 1;
   stackMap.clear();
+
+  // TODO: 保存callee-saved寄存器
+
+  // 给参数分配 stack slot
+  for (auto *arg : function->args) {
+    stackMap[arg] = stackSize;
+    stackSize += 4;
+  }
+
+  // 给指令结果分配 stack slot
   for (auto *bb : function->basicBlocks) {
     for (auto *instr : bb->instructions) {
-      if (instr->tag == Value::Tag::Alloca ||
-          instr->isDefVar() && instr->tag != Value::Tag::Load) {
-        stackMap[instr] = stackSize; // TODO: array
+      if (instr->tag == Value::Tag::Load)
+        continue;
+      if (instr->tag >= Value::Tag::BeginBooleanOp &&
+          instr->tag <= Value::Tag::EndBooleanOp) {
+        // For all br use, do not allocate stack. The codegen is in BranchInst.
+        bool allBrUse = std::all_of(
+            instr->uses.begin(), instr->uses.end(),
+            [](const auto &use) { return isa<BranchInst>(use.user); });
+        if (allBrUse)
+          continue;
+      }
+      stackMap[instr] = stackSize;
+      if (auto *alloca = dyn_cast<AllocaInst>(instr)) {
+        if (auto *arrTy = dyn_cast<ArrayType>(alloca->getAllocatedType())) {
+          assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+          stackSize += 4 * arrTy->getSize();
+        } else {
+          stackSize += 4;
+        }
+      } else {
         stackSize += 4;
       }
     }
   }
-  printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
+  printArmInstr("push", {"{r11, lr}"});
+  printArmInstr("mov", {"r11", "sp"});
+  if (stackSize > 1024) {
+    auto reg_size = regAlloc.allocIntReg();
+    printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
+    printArmInstr("sub", {"sp", "sp", reg_size});
+  } else {
+    printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
+  }
 
-  paramCnt = 0;
-  if (function->isBuiltin)
-    olc_unreachable("NYI");
+  // 保存参数到栈
+  assert(function->args.size() < 4 && "NYI");
+  for (unsigned i = 0; i < function->args.size(); i++) {
+    auto reg = regAlloc.claimIntReg(i);
+    storeRegToMemorySlot(reg, function->args[i]);
+  }
+
   for (auto &bb : function->basicBlocks) {
     printBasicBlock(bb);
   }
@@ -72,8 +174,13 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::GetElementPtr: {
     auto *gep = cast<GetElementPtrInst>(instr);
     auto reg_ptr = loadToReg(gep->getPointer());
-    auto reg_offset = getImme(gep->getIndex());
-    printArmInstr("add", {reg_ptr, reg_ptr, reg_offset});
+    if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
+      int offset = 4 * constIndex->getInt();
+      printArmInstr("add", {reg_ptr, reg_ptr, "#" + std::to_string(offset)});
+    } else {
+      std::string reg_offset = loadToReg(gep->getIndex());
+      printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
+    }
     storeRegToMemorySlot(reg_ptr, instr);
     break;
   }
@@ -81,8 +188,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     // TODO: consider float register
     auto *storeInst = cast<StoreInst>(instr);
     auto reg_val = loadToReg(storeInst->getValue());
-    auto reg_ptr = loadToReg(storeInst->getPointer());
-    printArmInstr("str", {reg_val, "[" + reg_ptr + "]"});
+    storeRegToAddress(reg_val, storeInst->getPointer());
     break;
   }
   case Value::Tag::Add:
@@ -94,21 +200,62 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Mul:
     printBinInstr("mul", instr);
     break;
-  case Value::Tag::Div:
-    printBinInstr("div", instr);
+  case Value::Tag::Div: {
+    auto reg_lhs = regAlloc.claimIntReg(0);
+    loadToSpecificReg(reg_lhs, instr->getOperand(0));
+    auto reg_rhs = regAlloc.claimIntReg(1);
+    loadToSpecificReg(reg_rhs, instr->getOperand(1));
+    printArmInstr("bl", {"__aeabi_idiv"});
+    storeRegToMemorySlot(reg_lhs, instr);
     break;
-  case Value::Tag::Mod:
-    // TODO: mod
+  }
+  case Value::Tag::Mod: {
+    auto reg_lhs = regAlloc.claimIntReg(0);
+    loadToSpecificReg(reg_lhs, instr->getOperand(0));
+    auto reg_rhs = regAlloc.claimIntReg(1);
+    loadToSpecificReg(reg_rhs, instr->getOperand(1));
+    printArmInstr("bl", {"__aeabi_idivmod"});
+    // 假设idivmod将除法结果放在R0，模结果放在R1
+    printArmInstr("mov", {reg_rhs, "r1"}); // 将模结果移动到目标寄存器
+    storeRegToMemorySlot(reg_rhs, instr);
     break;
+  }
   case Value::Tag::Lt:
   case Value::Tag::Le:
   case Value::Tag::Ge:
   case Value::Tag::Gt:
   case Value::Tag::Eq:
   case Value::Tag::Ne: {
-    // Do nothing, the codegen is in BranchInst
-    for (auto &&[user, idx] : instr->uses) {
-      assert(isa<BranchInst>(user) && "Cmp result must be used by branch");
+    // For all br use, do nothing. The codegen is in BranchInst.
+    bool allBrUse = std::all_of(
+        instr->uses.begin(), instr->uses.end(),
+        [](const auto &use) { return isa<BranchInst>(use.user); });
+    if (allBrUse)
+      break;
+    auto *cmpInst = cast<BinaryInst>(instr);
+    if (isNaiveLogicalOp(cmpInst)) {
+      auto reg_lhs = loadToReg(cmpInst->getLHS());
+      if (cmpInst->tag == Value::Tag::Ne) {
+        // Value Ne 0, Binarization
+        printArmInstr("cmp", {reg_lhs, "#0"});
+        printArmInstr("movne", {reg_lhs, "#1"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else if (cmpInst->tag == Value::Tag::Eq) {
+        // Value Eq 0, Logical negation
+        printArmInstr("clz", {reg_lhs, reg_lhs});
+        printArmInstr("lsrs", {reg_lhs, reg_lhs, "#5"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else {
+        olc_unreachable("Invalid tag");
+      }
+    } else {
+      auto reg_lhs = loadToReg(cmpInst->getLHS());
+      auto reg_rhs = loadToReg(cmpInst->getRHS());
+      printArmInstr("cmp", {reg_lhs, reg_rhs});
+      printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
+      printArmInstr(
+          "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
+      storeRegToMemorySlot(reg_lhs, instr);
     }
     break;
   }
@@ -116,15 +263,12 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto *brInst = cast<BranchInst>(instr);
     auto *cond = dyn_cast<BinaryInst>(brInst->getCondition());
     assert(cond && cond->isCmpOp() && "Branch condition must be a cmp op");
-    switch (cond->tag) {
-    case Value::Tag::Lt:
-      auto condTag = getCondTagStr(cond->tag);
-      printCmpInstr(cond);
-      printArmInstr(
-          "b" + condTag, {getLabel(cast<BranchInst>(instr)->getTrueBlock())});
-      printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
-      break;
-    }
+    auto condTag = getCondTagStr(cond->tag);
+    printCmpInstr(cond);
+    printArmInstr(
+        "b" + condTag, {getLabel(cast<BranchInst>(instr)->getTrueBlock())});
+    printArmInstr("b", {getLabel(cast<BranchInst>(instr)->getFalseBlock())});
+    break;
     break;
   }
   case Value::Tag::Jump:
@@ -133,18 +277,30 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   case Value::Tag::Return: {
     auto *retInst = cast<ReturnInst>(instr);
     // if not ret void
+    // TODO: consider float type
+    Reg reg_ret = regAlloc.claimIntReg(0);
     if (retInst->getNumOperands() == 1)
-      loadToSpecificReg("r0", retInst->getReturnValue());
-    printArmInstr("add", {"sp", "sp", "#" + std::to_string(stackSize)});
+      assignToSpecificReg(reg_ret, retInst->getReturnValue());
+    printArmInstr("mov", {"sp", "r11"});
+    printArmInstr("pop", {"{r11, lr}"});
     printArmInstr("bx", {"lr"});
     break;
   }
   case Value::Tag::Call: {
-    curReg = 0; // TODO: more params
-    for (auto *arg : cast<CallInst>(instr)->getArgs()) {
-      printArmInstr("str", {getReg(), getStackOper(arg)});
+    auto *callInst = cast<CallInst>(instr);
+    assert(callInst->getArgs().size() < 4 && "NYI");
+    std::vector<Reg> callRegs;
+    callRegs.emplace_back(regAlloc.claimIntReg(0));
+    for (unsigned i = 1; i < callInst->getArgs().size(); i++)
+      callRegs.emplace_back(regAlloc.claimIntReg(i));
+
+    // TODO: consider float
+
+    for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
+      assignToSpecificReg(callRegs[i], callInst->getArgs()[i]);
     }
-    printArmInstr("bl", {cast<CallInst>(instr)->getCallee()->fnName});
+    printArmInstr("bl", {callInst->getCallee()->fnName});
+    storeRegToMemorySlot(callRegs[0], instr);
     break;
   }
   default:
@@ -153,8 +309,6 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     olc_unreachable("NYI");
     break;
   }
-  // Drop all register values. We have already store the value to stack.
-  regAlloc.reset();
 }
 
 void ArmWriter::printArmInstr(
@@ -181,7 +335,9 @@ void ArmWriter::printBinInstr(const std::string &op, Instruction *instr) {
 
 void ArmWriter::printCmpInstr(BinaryInst *instr) {
   // TODO: utilize Operand2 to handle immediate
-  printBinInstr("cmp", instr);
+  auto reg_lhs = loadToReg(instr->getOperand(0));
+  auto reg_rhs = loadToReg(instr->getOperand(1));
+  printArmInstr("cmp", {reg_lhs, reg_rhs});
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
@@ -197,13 +353,6 @@ std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
     // TODO: ensure it is correct
     return "#" + std::to_string(val->getFloat());
   }
-}
-
-std::string ArmWriter::getReg() {
-  if (curReg >= 11) {
-    curReg = 0;
-  }
-  return "r" + std::to_string(curReg++);
 }
 
 std::string ArmWriter::getLabel(BasicBlock *bb) {
