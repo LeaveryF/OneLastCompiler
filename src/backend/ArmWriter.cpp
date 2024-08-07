@@ -96,11 +96,22 @@ void ArmWriter::printFunc(Function *function) {
   stackSize = 0;
   stackMap.clear();
 
-  // TODO: 保存callee-saved寄存器
+  // 给函数内 call 指令的栈参数分配 stack slot
+  // 后续在 Call CodeGen 中直接引用 [sp, #0] 开始的一段栈空间
+  int callStackSize = 0;
+  for (auto &bb : function->basicBlocks) {
+    for (auto &instr : bb->instructions) {
+      if (auto *callInst = dyn_cast<CallInst>(instr)) {
+        callStackSize =
+            std::max(int(callInst->getArgs().size()) - 4, callStackSize);
+      }
+    }
+  }
+  stackSize += callStackSize * 4;
 
-  // 给参数分配 stack slot
-  for (auto *arg : function->args) {
-    stackMap[arg] = stackSize;
+  // 给本函数的寄存器参数分配 stack slot
+  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
+    stackMap[function->args[i]] = stackSize;
     stackSize += 4;
   }
 
@@ -141,11 +152,17 @@ void ArmWriter::printFunc(Function *function) {
     printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
   }
 
-  // 保存参数到栈
-  assert(function->args.size() < 4 && "NYI");
-  for (unsigned i = 0; i < function->args.size(); i++) {
+  // 保存寄存器参数到栈
+  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
     auto reg = regAlloc.claimIntReg(i);
     storeRegToMemorySlot(reg, function->args[i]);
+  }
+
+  // 栈上参数已经被调用方分配，直接插入 stack slot
+  int argsOffset = stackSize;
+  for (unsigned i = 4; i < function->args.size(); i++) {
+    stackMap[function->args[i]] = argsOffset;
+    argsOffset += 4;
   }
 
   for (auto &bb : function->basicBlocks) {
@@ -309,16 +326,23 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   }
   case Value::Tag::Call: {
     auto *callInst = cast<CallInst>(instr);
-    assert(callInst->getArgs().size() < 4 && "NYI");
     std::vector<Reg> callRegs;
-    callRegs.emplace_back(regAlloc.claimIntReg(0));
-    for (unsigned i = 1; i < callInst->getArgs().size(); i++)
+    unsigned numRegs = std::clamp<unsigned>(callInst->getArgs().size(), 1, 4);
+    for (unsigned i = 0; i < numRegs; i++)
       callRegs.emplace_back(regAlloc.claimIntReg(i));
 
     // TODO: consider float
-
-    for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
+    // 寄存器入参
+    for (unsigned i = 0; i < 4 && i < callInst->getArgs().size(); i++) {
       assignToSpecificReg(callRegs[i], callInst->getArgs()[i]);
+    }
+    int argsOffset = 0;
+    for (unsigned i = 4; i < callInst->getArgs().size(); i++) {
+      auto reg_arg = loadToReg(callInst->getArgs()[i]);
+      // 入参压栈
+      printArmInstr(
+          "str", {reg_arg, "[sp, #" + std::to_string(argsOffset) + "]"});
+      argsOffset += 4;
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
     storeRegToMemorySlot(callRegs[0], instr);
