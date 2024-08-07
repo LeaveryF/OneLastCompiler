@@ -356,7 +356,6 @@ public:
   //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
     labelCnt = 0;
-    earlyExit = false;
 
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
@@ -422,6 +421,7 @@ public:
 
     curFunction = nullptr;
     curBasicBlock = nullptr;
+    earlyExit = false;
 
     return {};
   }
