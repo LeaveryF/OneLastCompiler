@@ -66,7 +66,8 @@ public:
   ArmWriter(std::ostream &os) : os(os) {}
 
   void printModule(Module *);
-  void printGlobal(GlobalVariable *);
+  void printGlobalData(GlobalVariable *);
+  void printGlobalBss(GlobalVariable *);
   void printFunc(Function *);
   void printBasicBlock(BasicBlock *);
   void printInstr(std::list<Instruction *>::iterator &);

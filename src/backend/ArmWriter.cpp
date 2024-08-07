@@ -28,7 +28,12 @@ ArmWriter::Reg &ArmWriter::Reg::operator=(Reg &&other) {
 void ArmWriter::printModule(Module *module) {
   os << ".data\n";
   for (auto &global : module->globals) {
-    printGlobal(global);
+    printGlobalData(global);
+  }
+
+  os << ".bss\n";
+  for (auto &global : module->globals) {
+    printGlobalBss(global);
   }
 
   os << ".text\n";
@@ -40,20 +45,17 @@ void ArmWriter::printModule(Module *module) {
   }
 }
 
-void ArmWriter::printGlobal(GlobalVariable *global) {
+void ArmWriter::printGlobalData(GlobalVariable *global) {
+  if (!global->getInitializer())
+    return;
+
   os << global->getName() << ":\n";
   assert(!global->getAllocatedType()->isFloatTy() && "NYI");
-  std::function<void(Constant *)> printConst = [&](Constant *val) {
-    if (!val) { // zeroinitializer
-      unsigned size = 4;
-      if (auto *arrTy = dyn_cast<ArrayType>(global->getAllocatedType())) {
-        assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
-        size = 4 * arrTy->getSize();
-      }
-      os << ".zero " << size << '\n';
-    } else if (auto *arr = dyn_cast<ConstantArray>(val)) {
+  std::function<void(Constant *)> printConstData = [&](Constant *val) {
+    assert(val && "Invalid initializer");
+    if (auto *arr = dyn_cast<ConstantArray>(val)) {
       for (auto *elt : arr->values) {
-        printConst(elt);
+        printConstData(elt);
       }
       os << ".size " << global->getName() << ", " << arr->values.size() * 4
          << '\n';
@@ -67,7 +69,20 @@ void ArmWriter::printGlobal(GlobalVariable *global) {
       olc_unreachable("NYI");
     }
   };
-  printConst(global->getInitializer());
+  printConstData(global->getInitializer());
+}
+
+void ArmWriter::printGlobalBss(GlobalVariable *global) {
+  if (global->getInitializer()) {
+    return;
+  }
+  os << global->getName() << ":\n";
+  unsigned size = 4;
+  if (auto *arrTy = dyn_cast<ArrayType>(global->getAllocatedType())) {
+    assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+    size = 4 * arrTy->getSize();
+  }
+  os << ".skip " << size << '\n';
 }
 
 void ArmWriter::printFunc(Function *function) {
