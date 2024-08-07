@@ -92,6 +92,12 @@ void ArmWriter::printFunc(Function *function) {
   curFunction = function;
   os << function->fnName << ":\n";
 
+  // 保护好参数寄存器，直到它们存入栈中
+  std::vector<Reg> arg_regs;
+  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
+    arg_regs.emplace_back(regAlloc.claimIntReg(i));
+  }
+
   // 计算栈空间
   stackSize = 0;
   stackMap.clear();
@@ -142,9 +148,11 @@ void ArmWriter::printFunc(Function *function) {
       }
     }
   }
+  // TODO: 使用别的方式平栈（算术平栈）
   printArmInstr("push", {"{r11, lr}"});
   printArmInstr("mov", {"r11", "sp"});
   if (stackSize >= 256) {
+    // 使用一个一定不会与参数寄存器冲突的寄存器用于加载
     auto reg_size = regAlloc.allocIntReg();
     printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
     printArmInstr("sub", {"sp", "sp", reg_size});
@@ -154,9 +162,9 @@ void ArmWriter::printFunc(Function *function) {
 
   // 保存寄存器参数到栈
   for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
-    auto reg = regAlloc.claimIntReg(i);
-    storeRegToMemorySlot(reg, function->args[i]);
+    storeRegToMemorySlot(arg_regs[i], function->args[i]);
   }
+  arg_regs.clear();
 
   // 栈上参数已经被调用方分配，直接插入 stack slot
   int argsOffset = stackSize;
