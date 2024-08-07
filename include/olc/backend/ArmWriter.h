@@ -77,9 +77,9 @@ public:
   void printBinInstr(const std::string &op, Instruction *instr);
   void printCmpInstr(BinaryInst *instr);
   std::string getStackOper(Value *val);
-  std::string getImme(uint32_t imm);
-  std::string getImme(int32_t imm) {
-    return getImme(static_cast<uint32_t>(imm));
+  std::string getImme(uint32_t imm, int maxBits = 12);
+  std::string getImme(int32_t imm, int maxBits = 12) {
+    return getImme(static_cast<uint32_t>(imm), maxBits);
   }
   std::string getImme(float imm);
   std::string getLabel(BasicBlock *bb);
@@ -179,7 +179,8 @@ public:
           printArmInstr("mov", {reg, "#" + std::to_string(imm)});
         } else {
           printArmInstr("movw", {reg, "#" + std::to_string(imm & 0xffff)});
-          printArmInstr("movt", {reg, "#" + std::to_string(imm >> 16)});
+          if (imm >> 16)
+            printArmInstr("movt", {reg, "#" + std::to_string(imm >> 16)});
         }
       } else {
         // reinterpret float as int
@@ -190,7 +191,8 @@ public:
         u.f = constVal->getFloat();
         auto reg_int = regAlloc.allocIntReg();
         printArmInstr("movw", {reg_int, "#" + std::to_string(u.i & 0xffff)});
-        printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
+        if (u.i >> 16)
+          printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
         printArmInstr("vmov.f32", {reg, reg_int});
       }
     } else {
@@ -213,8 +215,7 @@ public:
           printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
           printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
-          printArmInstr(
-              "add", {reg, "sp", "#" + std::to_string(stackMap[val])});
+          printArmInstr("add", {reg, "sp", getImme(stackMap[val], 8)});
         } else { // If non-static address, use memory slot
           printArmInstr("ldr", {reg, getStackOper(val)});
         }

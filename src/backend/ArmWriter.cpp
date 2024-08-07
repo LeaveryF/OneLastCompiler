@@ -204,7 +204,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto reg_ptr = loadToReg(gep->getPointer());
     if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
       int offset = 4 * constIndex->getInt();
-      printArmInstr("add", {reg_ptr, reg_ptr, getImme(offset)});
+      printArmInstr("add", {reg_ptr, reg_ptr, getImme(offset, 8)});
     } else {
       std::string reg_offset = loadToReg(gep->getIndex());
       printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
@@ -402,8 +402,8 @@ std::string ArmWriter::getStackOper(Value *val) {
   return "[sp, " + getImme(stackMap[val]) + "]";
 }
 
-std::string ArmWriter::getImme(uint32_t imm) {
-  if (imm < 4096) {
+std::string ArmWriter::getImme(uint32_t imm, int maxBits) {
+  if (imm < (1 << maxBits)) {
     return "#" + std::to_string(imm);
   } else {
     auto reg = regAlloc.allocIntReg();
