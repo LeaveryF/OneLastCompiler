@@ -148,8 +148,10 @@ void ArmWriter::printFunc(Function *function) {
       }
     }
   }
-  // TODO: 使用别的方式平栈（算术平栈）
+
   printArmInstr("push", {"{r11, lr}"});
+  const int pushSize = 8;
+
   printArmInstr("mov", {"r11", "sp"});
   if (stackSize >= 256) {
     // 使用一个一定不会与参数寄存器冲突的寄存器用于加载
@@ -167,7 +169,7 @@ void ArmWriter::printFunc(Function *function) {
   arg_regs.clear();
 
   // 栈上参数已经被调用方分配，直接插入 stack slot
-  int argsOffset = stackSize;
+  int argsOffset = stackSize + pushSize;
   for (unsigned i = 4; i < function->args.size(); i++) {
     stackMap[function->args[i]] = argsOffset;
     argsOffset += 4;
