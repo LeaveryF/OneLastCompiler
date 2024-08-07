@@ -156,7 +156,14 @@ void ArmWriter::printFunc(Function *function) {
   if (stackSize >= 256) {
     // 使用一个一定不会与参数寄存器冲突的寄存器用于加载
     auto reg_size = regAlloc.allocIntReg();
-    printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
+    // printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
+    if (stackSize > 65535) {
+      printArmInstr(
+          "movw", {reg_size, "#" + std::to_string(stackSize & 0xffff)});
+      printArmInstr("movt", {reg_size, "#" + std::to_string(stackSize >> 16)});
+    } else {
+      printArmInstr("mov", {reg_size, "#" + std::to_string(stackSize)});
+    }
     printArmInstr("sub", {"sp", "sp", reg_size});
   } else {
     printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
@@ -398,7 +405,20 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
 std::string ArmWriter::getStackOper(Value *val) {
   if (auto *ld = dyn_cast<LoadInst>(val))
     val = ld->getPointer();
-  return "[sp, #" + std::to_string(stackMap.at(val)) + "]";
+  if (int offset = stackMap.at(val); offset < 4096) {
+    return "[sp, #" + std::to_string(stackMap.at(val)) + "]";
+  } else {
+    auto reg_offset = regAlloc.allocIntReg();
+    // printArmInstr("ldr", {reg_offset, "=" + std::to_string(offset)});
+    if (offset > 65535) {
+      printArmInstr(
+          "movw", {reg_offset, "#" + std::to_string(offset & 0xffff)});
+      printArmInstr("movt", {reg_offset, "#" + std::to_string(offset >> 16)});
+    } else {
+      printArmInstr("mov", {reg_offset, "#" + std::to_string(offset)});
+    }
+    return "[sp, " + reg_offset.abiName() + "]";
+  }
 }
 
 std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
