@@ -173,7 +173,9 @@ public:
       if (auto *ld = dyn_cast<LoadInst>(val)) {
         val = ld->getPointer();
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-          printArmInstr("ldr", {reg, "=" + gv->getName()});
+          // printArmInstr("ldr", {reg, "=" + gv->getName()});
+          printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
+          printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
           printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
           printArmInstr("ldr", {reg, getStackOper(val)});
@@ -185,7 +187,9 @@ public:
         }
       } else {
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-          printArmInstr("ldr", {reg, "=" + gv->getName()});
+          // printArmInstr("ldr", {reg, "=" + gv->getName()});
+          printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
+          printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
           printArmInstr(
               "add", {reg, "sp", "#" + std::to_string(stackMap[val])});
