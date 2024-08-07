@@ -292,11 +292,12 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     break;
   case Value::Tag::Return: {
     auto *retInst = cast<ReturnInst>(instr);
-    // if not ret void
-    // TODO: consider float type
-    Reg reg_ret = regAlloc.claimIntReg(0);
-    if (retInst->getNumOperands() == 1)
+    if (retInst->getNumOperands() == 1) {
+      Reg reg_ret = retInst->getReturnValue()->getType()->isIntegerTy()
+                        ? regAlloc.claimIntReg(0)
+                        : regAlloc.claimFloatReg(0);
       assignToSpecificReg(reg_ret, retInst->getReturnValue());
+    }
     printArmInstr("mov", {"sp", "r11"});
     printArmInstr("pop", {"{r11, lr}"});
     printArmInstr("bx", {"lr"});
