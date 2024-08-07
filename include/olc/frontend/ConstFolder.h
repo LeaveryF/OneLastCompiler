@@ -21,8 +21,7 @@ class ConstFoldVisitor : public sysy2022BaseVisitor {
   SymbolTable &symbolTable;
 
 public:
-  ConstFoldVisitor(SymbolTable &symbolTable)
-      : symbolTable(symbolTable) {}
+  ConstFoldVisitor(SymbolTable &symbolTable) : symbolTable(symbolTable) {}
 
   ConstantValue *resolve(antlr4::ParserRuleContext *ctx) {
     return std::any_cast<ConstantValue *>(visit(ctx));
@@ -100,6 +99,10 @@ public:
           result = new ConstantValue(left->getInt() + right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() + right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() + right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() + right->getInt());
         } else {
           olc_unreachable("Invalid type for add operation");
         }
@@ -108,6 +111,10 @@ public:
           result = new ConstantValue(left->getInt() - right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() - right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() - right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() - right->getInt());
         } else {
           olc_unreachable("Invalid type for sub operation");
         }
@@ -137,6 +144,10 @@ public:
           result = new ConstantValue(left->getInt() * right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() * right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() * right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() * right->getInt());
         } else {
           olc_unreachable("Invalid type for mul operation");
         }
@@ -145,6 +156,10 @@ public:
           result = new ConstantValue(left->getInt() / right->getInt());
         } else if (left->isFloat() && right->isFloat()) {
           result = new ConstantValue(left->getFloat() / right->getFloat());
+        } else if (left->isInt() && right->isFloat()) {
+          result = new ConstantValue(left->getInt() / right->getFloat());
+        } else if (left->isFloat() && right->isInt()) {
+          result = new ConstantValue(left->getFloat() / right->getInt());
         } else {
           olc_unreachable("Invalid type for div operation");
         }
