@@ -79,8 +79,14 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
         binExpr && binExpr->isCmpOp()) {
       return binExpr;
     } else {
-      return curBasicBlock->create<BinaryInst>(
-          Value::Tag::Ne, expr, new ConstantValue(0));
+      // 隐式类型转换
+      if (expr->getType()->isIntegerTy()) {
+        return curBasicBlock->create<BinaryInst>(
+            Value::Tag::Ne, expr, new ConstantValue(0));
+      } else {
+        return curBasicBlock->create<BinaryInst>(
+            Value::Tag::Ne, expr, new ConstantValue(0.f));
+      }
     }
   }
 
@@ -646,6 +652,12 @@ public:
     } else {
       tag = Value::Tag::Sub;
     }
+    // 隐式类型转换
+    if (left->getType()->isIntegerTy() && right->getType()->isFloatTy()) {
+      left = curBasicBlock->create<IntToFloatInst>(left);
+    } else if (left->getType()->isFloatTy() && right->getType()->isIntegerTy()) {
+      right = curBasicBlock->create<IntToFloatInst>(right);
+    }
     Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
     // 返回值
     valueMap[ctx] = result;
@@ -666,6 +678,12 @@ public:
       tag = Value::Tag::Div;
     } else {
       tag = Value::Tag::Mod;
+    }
+    // 隐式类型转换
+    if (left->getType()->isIntegerTy() && right->getType()->isFloatTy()) {
+      left = curBasicBlock->create<IntToFloatInst>(left);
+    } else if (left->getType()->isFloatTy() && right->getType()->isIntegerTy()) {
+      right = curBasicBlock->create<IntToFloatInst>(right);
     }
     Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
     // 返回值
@@ -729,18 +747,32 @@ public:
   visitRecUnaryExpr(sysy2022Parser::RecUnaryExprContext *ctx) override {
     // 创建指令
     if (ctx->op->getText() == "+") {
-      // do nothing
+      // +x => x    do nothing
       valueMap[ctx] = createRValue(ctx->unaryExpr());
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
       auto *subVal = createRValue(ctx->unaryExpr());
-      Value *result = curBasicBlock->create<BinaryInst>(
-          Value::Tag::Sub, new ConstantValue(0), subVal);
+      // 判断类型
+      Value *result = nullptr;
+      if (subVal->getType()->isFloatTy()) {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Sub, new ConstantValue(0.f), subVal);
+      } else {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Sub, new ConstantValue(0), subVal);
+      }
       valueMap[ctx] = result;
     } else {
       auto *subVal = createRValue(ctx->unaryExpr());
-      Value *result = curBasicBlock->create<BinaryInst>(
-          Value::Tag::Eq, subVal, new ConstantValue(0));
+      // 隐式类型转换
+      Value *result = nullptr;
+      if (subVal->getType()->isIntegerTy()) {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Eq, subVal, new ConstantValue(0));
+      } else {
+        result = curBasicBlock->create<BinaryInst>(
+            Value::Tag::Eq, subVal, new ConstantValue(0.f));
+      }
       valueMap[ctx] = result;
     }
     return {};
@@ -888,6 +920,12 @@ public:
       tag = Value::Tag::Le;
     } else {
       tag = Value::Tag::Ge;
+    }
+    if (left->getType()->isIntegerTy() && right->getType()->isFloatTy()) {
+      left = curBasicBlock->create<IntToFloatInst>(left);
+    } else if (
+        left->getType()->isFloatTy() && right->getType()->isIntegerTy()) {
+      right = curBasicBlock->create<IntToFloatInst>(right);
     }
     Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
     // 返回值
