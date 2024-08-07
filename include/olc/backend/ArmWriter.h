@@ -3,6 +3,7 @@
 #include <iostream>
 #include <set>
 #include <unordered_map>
+#include <sstream>
 
 namespace olc {
 
@@ -170,15 +171,19 @@ public:
   void loadToSpecificReg(Reg const &reg, Value *val) {
     if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       if (constVal->isInt()) {
-        if (constVal->getInt() < 65536) {
-          printArmInstr("mov", {reg, "#" + std::to_string(constVal->getInt())});
-        } else {
-          printArmInstr("ldr", {reg, "=" + std::to_string(constVal->getInt())});
-        }
+        printArmInstr("ldr", {reg, "=" + std::to_string(constVal->getInt())});
       } else {
-        printArmInstr("vmov.32", {reg, ".f_" + std::to_string(floatCnt)});
-        os << ".f_" + std::to_string(floatCnt++) << '\n';
-        os << ".float " << constVal->getFloat() << '\n';
+        // get hex of float
+        union {
+          float f;
+          uint32_t i;
+        } u;
+        u.f = constVal->getFloat();
+        std::stringstream ss;
+        ss << std::hex << u.i;
+        auto reg_int = regAlloc.allocIntReg();
+        printArmInstr("ldr", {reg_int, "=0x" + ss.str()});
+        printArmInstr("vmov.f32", {reg, reg_int});
       }
     } else {
       if (auto *ld = dyn_cast<LoadInst>(val)) {

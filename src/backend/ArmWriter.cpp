@@ -144,7 +144,7 @@ void ArmWriter::printFunc(Function *function) {
   }
   printArmInstr("push", {"{r11, lr}"});
   printArmInstr("mov", {"r11", "sp"});
-  if (stackSize > 1024) {
+  if (stackSize >= 256) {
     auto reg_size = regAlloc.allocIntReg();
     printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
     printArmInstr("sub", {"sp", "sp", reg_size});
