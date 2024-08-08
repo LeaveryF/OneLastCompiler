@@ -283,13 +283,7 @@ public:
                   dfs(val, dim + 1, index + match);
                 }
               }
-              while (index < len) {
-                if (type->isFloatTy()) {
-                  values[index++] = new ConstantValue(0.f);
-                } else {
-                  values[index++] = new ConstantValue(0);
-                }
-              }
+              index = len;
             };
             dfs(varDef->initVal(), 0, size);
             // 初始化数组
@@ -302,11 +296,21 @@ public:
                   allocaInst, new ConstantValue(0));
               std::vector<Value *> args;
               args.push_back(basePtr);
-              args.push_back(new ConstantValue((int)size));
+              args.push_back(new ConstantValue((int)size * 4));
               args.push_back(new ConstantValue(0));
               curBasicBlock->create<CallInst>(memsetFunc, args);
             } else {
               // 否则正常初始化数组
+              // 先遍历一遍将nullptr替换为0
+              for (int i = 0; i < (int)size; ++i) {
+                if (!values[i]) {
+                  if (type->isFloatTy()) {
+                    values[i] = new ConstantValue(0.f);
+                  } else {
+                    values[i] = new ConstantValue(0);
+                  }
+                }
+              }
               for (int i = 0; i < (int)size; ++i) {
                 Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
                     allocaInst, new ConstantValue(i));
