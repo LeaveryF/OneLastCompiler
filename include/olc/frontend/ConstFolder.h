@@ -23,16 +23,34 @@ class ConstFoldVisitor : public sysy2022BaseVisitor {
 public:
   ConstFoldVisitor(SymbolTable &symbolTable) : symbolTable(symbolTable) {}
 
-  ConstantValue *resolve(antlr4::ParserRuleContext *ctx) {
-    return std::any_cast<ConstantValue *>(visit(ctx));
+  ConstantValue *resolve(antlr4::ParserRuleContext *ctx, Type *type = nullptr) {
+    auto *val = std::any_cast<ConstantValue *>(visit(ctx));
+    if (!type)
+      return val;
+
+    if (type->isIntegerTy()) {
+      if (val->isInt())
+        return val;
+      else {
+        return new ConstantValue(static_cast<int>(val->getFloat()));
+      }
+    } else if (type->isFloatTy()) {
+      if (val->isFloat())
+        return val;
+      else {
+        return new ConstantValue(static_cast<float>(val->getInt()));
+      }
+    } else {
+      olc_unreachable("Invalid type for constant value");
+    }
   }
 
   int resolveInt(antlr4::ParserRuleContext *ctx) {
-    return resolve(ctx)->getInt();
+    return resolve(ctx, IntegerType::get())->getInt();
   }
 
   float resolveFloat(antlr4::ParserRuleContext *ctx) {
-    return resolve(ctx)->getFloat();
+    return resolve(ctx, FloatType::get())->getFloat();
   }
 
   std::vector<int>

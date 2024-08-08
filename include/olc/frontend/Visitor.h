@@ -193,7 +193,7 @@ public:
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
-                  values[index++] = constFolder.resolve(val->expr());
+                  values[index++] = constFolder.resolve(val->expr(), type);
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
@@ -276,14 +276,14 @@ public:
           // 常量变量
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal());
+            initializer = constFolder.resolve(varDef->initVal(), type);
           }
           symbolTable.insert(varName, initializer);
         } else if (isGlobal) {
           // 初始化全局变量的值
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal());
+            initializer = constFolder.resolve(varDef->initVal(), type);
             // 判断全局变量是否为常量
           }
           GlobalVariable *globalVar =
@@ -760,6 +760,7 @@ public:
     std::vector<int> shape = symbolTable.lookupShape(varName);
 
     if (!isa<GlobalVariable>(lVal) && isa<Constant>(lVal)) {
+      // pass through the constant, i2f and f2i should be done in createRValue
       valueMap[ctx] = constFolder.resolve(ctx);
       isLValueMap[ctx] = false;
       return {};
