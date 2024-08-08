@@ -62,7 +62,7 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
       if (totalCount > arr->values.size()) {
         os << ".zero " << 4 * (totalCount - arr->values.size()) << '\n';
       }
-      os << ".size " << global->getName() << ", " << arr->values.size() * 4
+      os << ".size " << global->getName() << ", " << totalCount * 4
          << '\n';
     } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       if (constVal->isInt()) {
