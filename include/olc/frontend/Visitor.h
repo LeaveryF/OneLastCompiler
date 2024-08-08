@@ -261,11 +261,11 @@ public:
                   values[index++] = createRValue(val->expr(), type);
                   auto *constVal = dyn_cast<ConstantValue>(values[index - 1]);
                   if (constVal && constVal->isInt() &&
-                      constVal->getInt() == 0) {
+                      constVal->getInt() != 0) {
                     allZero = false;
                   } else if (
                       constVal && constVal->isFloat() &&
-                      constVal->getFloat() == 0.f) {
+                      constVal->getFloat() != 0.f) {
                     allZero = false;
                   }
                 } else {
