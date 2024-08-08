@@ -318,6 +318,10 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
       auto reg_lhs = loadToReg(cmpInst->getLHS());
       auto reg_rhs = loadToReg(cmpInst->getRHS());
       printArmInstr("cmp", {reg_lhs, reg_rhs});
+      if (reg_lhs.isFloat) {
+        // 从协处理器中转移条件标志
+        printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+      }
       printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
       printArmInstr(
           "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
@@ -463,6 +467,10 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
   auto reg_lhs = loadToReg(instr->getOperand(0));
   auto reg_rhs = loadToReg(instr->getOperand(1));
   printArmInstr("cmp", {reg_lhs, reg_rhs});
+  if (reg_lhs.isFloat) {
+    // 从协处理器中转移条件标志
+    printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+  }
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
