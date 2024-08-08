@@ -57,6 +57,11 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
       for (auto *elt : arr->values) {
         printConstData(elt);
       }
+      size_t totalCount = cast<ArrayType>(arr->getType())->getSize();
+      // 不足的部分自动填充0
+      if (totalCount > arr->values.size()) {
+        os << ".zero " << 4 * (totalCount - arr->values.size()) << '\n';
+      }
       os << ".size " << global->getName() << ", " << arr->values.size() * 4
          << '\n';
     } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
@@ -346,8 +351,8 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     std::optional<Reg> reg_ret;
     if (retInst->getNumOperands() == 1) {
       reg_ret = retInst->getReturnValue()->getType()->isIntegerTy()
-                        ? regAlloc.claimIntReg(0)
-                        : regAlloc.claimFloatReg(0);
+                    ? regAlloc.claimIntReg(0)
+                    : regAlloc.claimFloatReg(0);
       assignToSpecificReg(*reg_ret, retInst->getReturnValue());
     }
     printArmInstr("add", {"sp", "sp", getImme(stackSize, 8)});

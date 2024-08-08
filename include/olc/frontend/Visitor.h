@@ -187,17 +187,16 @@ public:
           // 全局数组 / 常量数组
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            std::vector<Constant *> values(size, nullptr);
-            int index = 0;
+            std::vector<Constant *> values;
             std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
-                  values[index++] = constFolder.resolve(val->expr(), type);
+                  values.push_back(constFolder.resolve(val->expr(), type));
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
-                    if (index % (match * dimSizes[matchDim]) == 0) {
+                    if (values.size() % (match * dimSizes[matchDim]) == 0) {
                       match *= dimSizes[matchDim];
                     } else {
                       break;
@@ -206,19 +205,33 @@ public:
                   if (matchDim == dimSizes.size() - 1) {
                     olc_unreachable("初始化列表错误");
                   }
-                  dfs(val, dim + 1, index + match);
+                  dfs(val, dim + 1, values.size() + match);
                 }
               }
-              while (index < len) {
+              // 如果是填充到最后，省略末尾的0
+              if (len == size)
+                return;
+              while (values.size() < len) {
                 if (type->isFloatTy()) {
-                  values[index++] = new ConstantValue(0.f);
+                  values.push_back(new ConstantValue(0.f));
                 } else {
-                  values[index++] = new ConstantValue(0);
+                  values.push_back(new ConstantValue(0));
                 }
               }
             };
             dfs(varDef->initVal(), 0, size);
-            initializer = cast<Constant>(new ConstantArray(arrayType, values));
+            bool allZero =
+                std::all_of(values.begin(), values.end(), [&](Constant *val) {
+                  if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+                    return constVal->isInt() && constVal->getInt() == 0;
+                  }
+                  return false;
+                });
+            if (!allZero)
+              initializer =
+                  cast<Constant>(new ConstantArray(arrayType, values));
+            else
+              initializer = nullptr;
           }
           GlobalVariable *globalVar =
               new GlobalVariable(arrayType, varName, initializer);
