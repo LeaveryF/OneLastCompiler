@@ -1,4 +1,5 @@
 #include <olc/backend/ArmWriter.h>
+#include <optional>
 
 namespace olc {
 
@@ -158,19 +159,10 @@ void ArmWriter::printFunc(Function *function) {
     }
   }
 
-  printArmInstr("push", {"{r11, lr}"});
-  const int pushSize = 8;
+  printArmInstr("push", {"{lr}"});
+  const int pushSize = 4;
 
-  printArmInstr("mov", {"r11", "sp"});
-  if (stackSize >= 256) {
-    // 使用一个一定不会与参数寄存器冲突的寄存器用于加载
-    auto reg_size = regAlloc.allocIntReg();
-    printArmInstr("movw", {reg_size, "#" + std::to_string(stackSize & 0xffff)});
-    printArmInstr("movt", {reg_size, "#" + std::to_string(stackSize >> 16)});
-    printArmInstr("sub", {"sp", "sp", reg_size});
-  } else {
-    printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
-  }
+  printArmInstr("sub", {"sp", "sp", getImme(stackSize, 8)});
 
   // 保存寄存器参数到栈
   for (unsigned i = 0; i < funcCallInfo.argsInIntReg.size(); i++) {
@@ -346,14 +338,15 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     break;
   case Value::Tag::Return: {
     auto *retInst = cast<ReturnInst>(instr);
+    std::optional<Reg> reg_ret;
     if (retInst->getNumOperands() == 1) {
-      Reg reg_ret = retInst->getReturnValue()->getType()->isIntegerTy()
+      reg_ret = retInst->getReturnValue()->getType()->isIntegerTy()
                         ? regAlloc.claimIntReg(0)
                         : regAlloc.claimFloatReg(0);
-      assignToSpecificReg(reg_ret, retInst->getReturnValue());
+      assignToSpecificReg(*reg_ret, retInst->getReturnValue());
     }
-    printArmInstr("mov", {"sp", "r11"});
-    printArmInstr("pop", {"{r11, lr}"});
+    printArmInstr("add", {"sp", "sp", getImme(stackSize, 8)});
+    printArmInstr("pop", {"{lr}"});
     printArmInstr("bx", {"lr"});
     break;
   }
