@@ -151,7 +151,14 @@ public:
         new Function(
             VoidType::get(), "putfarray",
             {new Argument{IntegerType::get(), "n"},
-             new Argument{PointerType::get(FloatType::get()), "a"}})};
+             new Argument{PointerType::get(FloatType::get()), "a"}}),
+        // void __aeabi_memset(void *dest, size_t n, int c);
+        new Function(
+            VoidType::get(), "__aeabi_memset",
+            {new Argument{PointerType::get(IntegerType::get()), "dest"},
+             new Argument{IntegerType::get(), "n"},
+             new Argument{IntegerType::get(), "c"}}),
+    };
 
     for (auto *func : builtins) {
       func->isBuiltin = true;
@@ -246,11 +253,21 @@ public:
             std::vector<Value *> values(size, nullptr);
             int index = 0;
 
+            bool allZero = true;
             std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
                   values[index++] = createRValue(val->expr(), type);
+                  auto *constVal = dyn_cast<ConstantValue>(values[index - 1]);
+                  if (constVal && constVal->isInt() &&
+                      constVal->getInt() == 0) {
+                    allZero = false;
+                  } else if (
+                      constVal && constVal->isFloat() &&
+                      constVal->getFloat() == 0.f) {
+                    allZero = false;
+                  }
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
@@ -276,10 +293,25 @@ public:
             };
             dfs(varDef->initVal(), 0, size);
             // 初始化数组
-            for (int i = 0; i < (int)size; ++i) {
-              Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-                  allocaInst, new ConstantValue(i));
-              curBasicBlock->create<StoreInst>(values[i], elementPtr);
+            // 如果所有值为零，使用__aeabi_memset初始化
+            if (allZero) {
+              // void __aeabi_memset(void *dest, size_t n, int c);
+              Function *memsetFunc =
+                  cast<Function>(symbolTable.lookup("__aeabi_memset"));
+              Value *basePtr = curBasicBlock->create<GetElementPtrInst>(
+                  allocaInst, new ConstantValue(0));
+              std::vector<Value *> args;
+              args.push_back(basePtr);
+              args.push_back(new ConstantValue((int)size));
+              args.push_back(new ConstantValue(0));
+              curBasicBlock->create<CallInst>(memsetFunc, args);
+            } else {
+              // 否则正常初始化数组
+              for (int i = 0; i < (int)size; ++i) {
+                Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+                    allocaInst, new ConstantValue(i));
+                curBasicBlock->create<StoreInst>(values[i], elementPtr);
+              }
             }
           }
         }
