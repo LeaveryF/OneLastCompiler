@@ -85,7 +85,7 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
   }
 
   Value *createCondValue(antlr4::ParserRuleContext *ctx) {
-    auto *expr = createRValue(ctx, IntegerType::get());
+    auto *expr = createRValue(ctx, nullptr);
     if (auto *binExpr = dyn_cast<BinaryInst>(expr);
         binExpr && binExpr->isCmpOp()) {
       return binExpr;
