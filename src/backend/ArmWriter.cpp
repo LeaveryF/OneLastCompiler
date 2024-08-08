@@ -162,6 +162,11 @@ void ArmWriter::printFunc(Function *function) {
   printArmInstr("push", {"{lr}"});
   const int pushSize = 4;
 
+  // 对齐到 8
+  if ((stackSize + pushSize) % 8 != 0) {
+    stackSize += 4;
+  }
+
   printArmInstr("sub", {"sp", "sp", getImme(stackSize, 8)});
 
   // 保存寄存器参数到栈
