@@ -63,6 +63,15 @@ class ArmWriter {
     return true;
   }
 
+  uint32_t reinterpretFloat(float x) {
+    union {
+      float f;
+      uint32_t i;
+    } u;
+    u.f = x;
+    return u.i;
+  }
+
 public:
   ArmWriter(std::ostream &os) : os(os) {}
 
@@ -199,22 +208,37 @@ public:
       if (auto *ld = dyn_cast<LoadInst>(val)) {
         val = ld->getPointer();
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
-          printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
-          printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
-          printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
+          if (!reg.isFloat) {
+            printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
+            printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
+            printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
+          } else {
+            auto reg_addr = regAlloc.allocIntReg();
+            printArmInstr("movw", {reg_addr, "#:lower16:" + gv->getName()});
+            printArmInstr("movt", {reg_addr, "#:upper16:" + gv->getName()});
+            printArmInstr("ldr", {reg, "[" + reg_addr.abiName() + "]"});
+          }
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
           printArmInstr("ldr", {reg, getStackOper(val)});
         } else { // If non-static address, use memory slot
-          // Load from memory slot
-          printArmInstr("ldr", {reg, getStackOper(val)});
-          // Load from the loaded address
-          printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
+          if (!reg.isFloat) {
+            // Load from memory slot
+            printArmInstr("ldr", {reg, getStackOper(val)});
+            // Load from the loaded address
+            printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
+          } else {
+            auto reg_addr = regAlloc.allocIntReg();
+            printArmInstr("ldr", {reg_addr, getStackOper(val)});
+            printArmInstr("ldr", {reg, "[" + reg_addr.abiName() + "]"});
+          }
         }
       } else {
         if (auto *gv = dyn_cast<GlobalVariable>(val)) {
+          assert(!reg.isFloat && "Address should not be float");
           printArmInstr("movw", {reg, "#:lower16:" + gv->getName()});
           printArmInstr("movt", {reg, "#:upper16:" + gv->getName()});
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
+          assert(!reg.isFloat && "Address should not be float");
           printArmInstr("add", {reg, "sp", getImme(stackMap[val], 8)});
         } else { // If non-static address, use memory slot
           printArmInstr("ldr", {reg, getStackOper(val)});
@@ -233,7 +257,8 @@ public:
     if (auto *arg = dyn_cast<Argument>(val)) {
       if (int argNo = curFunction->getArgNo(arg); argNo < 4) {
         assert(!arg->getType()->isFloatTy() && "NYI");
-        printArmInstr("mov", {reg, regAlloc.claimIntReg(argNo)});
+        auto reg_arg = regAlloc.claimIntReg(argNo);
+        printArmInstr("mov", {reg, reg_arg});
         return;
       }
     }

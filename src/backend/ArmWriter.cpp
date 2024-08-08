@@ -50,7 +50,6 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
     return;
 
   os << global->getName() << ":\n";
-  assert(!global->getAllocatedType()->isFloatTy() && "NYI");
   std::function<void(Constant *)> printConstData = [&](Constant *val) {
     assert(val && "Invalid initializer");
     if (auto *arr = dyn_cast<ConstantArray>(val)) {
@@ -63,7 +62,7 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
       if (constVal->isInt()) {
         os << ".word " << constVal->getInt() << '\n';
       } else {
-        olc_unreachable("HEX float NYI");
+        os << ".word " << reinterpretFloat(constVal->getFloat()) << '\n';
       }
     } else {
       olc_unreachable("NYI");
@@ -229,12 +228,19 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     printBinInstr("mul", instr);
     break;
   case Value::Tag::Div: {
-    auto reg_lhs = regAlloc.claimIntReg(0);
-    loadToSpecificReg(reg_lhs, instr->getOperand(0));
-    auto reg_rhs = regAlloc.claimIntReg(1);
-    loadToSpecificReg(reg_rhs, instr->getOperand(1));
-    printArmInstr("bl", {"__aeabi_idiv"});
-    storeRegToMemorySlot(reg_lhs, instr);
+    if (instr->getType()->isIntegerTy()) {
+      auto reg_lhs = regAlloc.claimIntReg(0);
+      loadToSpecificReg(reg_lhs, instr->getOperand(0));
+      auto reg_rhs = regAlloc.claimIntReg(1);
+      loadToSpecificReg(reg_rhs, instr->getOperand(1));
+      printArmInstr("bl", {"__aeabi_idiv"});
+      storeRegToMemorySlot(reg_lhs, instr);
+    } else {
+      auto reg_lhs = loadToReg(instr->getOperand(0));
+      auto reg_rhs = loadToReg(instr->getOperand(1));
+      printArmInstr("vdiv.f32", {reg_lhs, reg_lhs, reg_rhs});
+      storeRegToMemorySlot(reg_lhs, instr);
+    }
     break;
   }
   case Value::Tag::Mod: {
@@ -250,22 +256,20 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   }
   case Value::Tag::IntToFloat: {
     auto *i2fInst = cast<IntToFloatInst>(instr);
-    auto reg = regAlloc.claimIntReg(0);
-    printArmInstr("ldr", {reg, getStackOper(i2fInst)});
-    auto freg = regAlloc.claimFloatReg(0);
-    printArmInstr("vldr.32", {freg, "[" + reg.abiName() + "]"});
-    printArmInstr("vcvt.f32.u32", {freg, freg});
+    auto ireg = loadToReg(instr->getOperand(0));
+    auto freg = regAlloc.allocFloatReg();
+    printArmInstr("vmov.f32", {freg, ireg});
+    printArmInstr("vcvt.f32.s32", {freg, freg});
     storeRegToMemorySlot(freg, instr);
     break;
   }
   case Value::Tag::FloatToInt: {
     auto *f2iInst = cast<FloatToIntInst>(instr);
-    auto reg = regAlloc.claimIntReg(0);
-    printArmInstr("ldr", {reg, getStackOper(f2iInst)});
-    auto freg = regAlloc.claimFloatReg(0);
-    printArmInstr("vldr.32", {freg, "[" + reg.abiName() + "]"});
-    printArmInstr("vcvt.u32.f32", {freg, freg});
-    storeRegToMemorySlot(freg, instr);
+    auto freg = loadToReg(instr->getOperand(0));
+    printArmInstr("vcvt.s32.f32", {freg, freg});
+    auto ireg = regAlloc.allocIntReg();
+    printArmInstr("vmov.f32", {ireg, freg});
+    storeRegToMemorySlot(ireg, instr);
     break;
   }
   case Value::Tag::Lt:
@@ -339,8 +343,13 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto *callInst = cast<CallInst>(instr);
     std::vector<Reg> callRegs;
     unsigned numRegs = std::clamp<unsigned>(callInst->getArgs().size(), 1, 4);
-    for (unsigned i = 0; i < numRegs; i++)
-      callRegs.emplace_back(regAlloc.claimIntReg(i));
+    for (unsigned i = 0; i < numRegs; i++) {
+      if (callInst->getArgs().at(i)->getType()->isFloatTy()) {
+        callRegs.emplace_back(regAlloc.claimFloatReg(i));
+      } else {
+        callRegs.emplace_back(regAlloc.claimIntReg(i));
+      }
+    }
 
     // TODO: consider float
     // 寄存器入参
@@ -367,11 +376,27 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   }
 }
 
+static std::unordered_map<std::string, std::string> intInstr2FltInstrOpCode{
+    {"add", "vadd.f32"}, {"sub", "vsub.f32"}, {"mul", "vmul.f32"},
+    {"div", "vdiv.f32"}, {"cmp", "vcmp.f32"}, {"mov", "vmov.f32"},
+    {"ldr", "vldr.32"},  {"str", "vstr.32"},
+};
+
 void ArmWriter::printArmInstr(
     const std::string &op, const std::vector<std::string> &operands) {
+
   // indent for instructions
   os << "  ";
-  os << op;
+
+  auto isFloatRegName = [](std::string const &name) {
+    return name != "sp" && name.at(0) == 's';
+  };
+
+  if (intInstr2FltInstrOpCode.count(op) && isFloatRegName(operands.at(0))) {
+    os << intInstr2FltInstrOpCode[op];
+  } else {
+    os << op;
+  }
   os << " ";
   for (int i = 0; i < operands.size(); ++i) {
     if (i > 0) {
