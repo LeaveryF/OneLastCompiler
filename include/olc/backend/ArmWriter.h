@@ -72,6 +72,34 @@ class ArmWriter {
     return u.i;
   }
 
+  struct CallInfo {
+    std::vector<Value *> argsInIntReg, argsInFloatReg;
+    std::vector<Value *> argsOnStack;
+  };
+
+  template <typename T>
+  auto arrangeCallInfo(std::vector<T> const &args) -> CallInfo {
+    CallInfo info{};
+    constexpr size_t maxIntRegs = 4, maxFloatRegs = 16;
+    for (auto const &rarg : args) {
+      auto arg = cast<Value>(rarg);
+      if (arg->getType()->isFloatTy()) {
+        if (info.argsInFloatReg.size() < maxFloatRegs) {
+          info.argsInFloatReg.push_back(arg);
+        } else {
+          info.argsOnStack.push_back(arg);
+        }
+      } else {
+        if (info.argsInIntReg.size() < maxIntRegs) {
+          info.argsInIntReg.push_back(arg);
+        } else {
+          info.argsOnStack.push_back(arg);
+        }
+      }
+    }
+    return info;
+  }
+
 public:
   ArmWriter(std::ostream &os) : os(os) {}
 

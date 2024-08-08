@@ -91,10 +91,15 @@ void ArmWriter::printFunc(Function *function) {
   curFunction = function;
   os << function->fnName << ":\n";
 
+  CallInfo funcCallInfo = arrangeCallInfo(function->args);
+
   // 保护好参数寄存器，直到它们存入栈中
-  std::vector<Reg> arg_regs;
-  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
-    arg_regs.emplace_back(regAlloc.claimIntReg(i));
+  std::vector<Reg> argIntRegs, argFloatRegs;
+  for (unsigned i = 0; i < funcCallInfo.argsInIntReg.size(); i++) {
+    argIntRegs.emplace_back(regAlloc.claimIntReg(i));
+  }
+  for (unsigned i = 0; i < funcCallInfo.argsInFloatReg.size(); i++) {
+    argFloatRegs.emplace_back(regAlloc.claimFloatReg(i));
   }
 
   // 计算栈空间
@@ -107,16 +112,21 @@ void ArmWriter::printFunc(Function *function) {
   for (auto &bb : function->basicBlocks) {
     for (auto &instr : bb->instructions) {
       if (auto *callInst = dyn_cast<CallInst>(instr)) {
+        CallInfo callInfo = arrangeCallInfo(callInst->getArgs());
         callStackSize =
-            std::max(int(callInst->getArgs().size()) - 4, callStackSize);
+            std::max<int>(callInfo.argsOnStack.size(), callStackSize);
       }
     }
   }
   stackSize += callStackSize * 4;
 
   // 给本函数的寄存器参数分配 stack slot
-  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
-    stackMap[function->args[i]] = stackSize;
+  for (auto *arg : funcCallInfo.argsInIntReg) {
+    stackMap[arg] = stackSize;
+    stackSize += 4;
+  }
+  for (auto *arg : funcCallInfo.argsInFloatReg) {
+    stackMap[arg] = stackSize;
     stackSize += 4;
   }
 
@@ -163,10 +173,14 @@ void ArmWriter::printFunc(Function *function) {
   }
 
   // 保存寄存器参数到栈
-  for (unsigned i = 0; i < 4 && i < function->args.size(); i++) {
-    storeRegToMemorySlot(arg_regs[i], function->args[i]);
+  for (unsigned i = 0; i < funcCallInfo.argsInIntReg.size(); i++) {
+    storeRegToMemorySlot(argIntRegs.at(i), funcCallInfo.argsInIntReg.at(i));
   }
-  arg_regs.clear();
+  for (unsigned i = 0; i < funcCallInfo.argsInFloatReg.size(); i++) {
+    storeRegToMemorySlot(argFloatRegs.at(i), funcCallInfo.argsInFloatReg.at(i));
+  }
+  argIntRegs.clear();
+  argFloatRegs.clear();
 
   // 栈上参数已经被调用方分配，直接插入 stack slot
   int argsOffset = stackSize + pushSize;
@@ -341,31 +355,61 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   }
   case Value::Tag::Call: {
     auto *callInst = cast<CallInst>(instr);
-    std::vector<Reg> callRegs;
-    unsigned numRegs = std::clamp<unsigned>(callInst->getArgs().size(), 1, 4);
-    for (unsigned i = 0; i < numRegs; i++) {
-      if (callInst->getArgs().at(i)->getType()->isFloatTy()) {
-        callRegs.emplace_back(regAlloc.claimFloatReg(i));
+    auto args = callInst->getArgs();
+    auto &&[argsInIntRegs, argsInFloatRegs, argsOnStack] =
+        arrangeCallInfo(args);
+
+    // 认领寄存器
+    std::unordered_map<int, Reg> intRegs, floatRegs;
+    auto claimReg = [&](bool isFloat, int i) {
+      if (isFloat) {
+        if (floatRegs.find(i) == floatRegs.end()) {
+          floatRegs.emplace(i, regAlloc.claimFloatReg(i));
+        }
       } else {
-        callRegs.emplace_back(regAlloc.claimIntReg(i));
+        if (intRegs.find(i) == intRegs.end()) {
+          intRegs.emplace(i, regAlloc.claimIntReg(i));
+        }
       }
+    };
+
+    // 返回值 r0 / s0
+    claimReg(callInst->getType()->isFloatTy(), 0);
+    // 参数 r0-r3 / s0-s15
+    for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
+      claimReg(false, i);
+    }
+    for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
+      claimReg(true, i);
     }
 
-    // TODO: consider float
     // 寄存器入参
-    for (unsigned i = 0; i < 4 && i < callInst->getArgs().size(); i++) {
-      assignToSpecificReg(callRegs[i], callInst->getArgs()[i]);
+    for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
+      assignToSpecificReg(intRegs.at(i), argsInIntRegs[i]);
     }
+    for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
+      assignToSpecificReg(floatRegs.at(i), argsInFloatRegs[i]);
+    }
+
+    // 其它入参压栈
     int argsOffset = 0;
-    for (unsigned i = 4; i < callInst->getArgs().size(); i++) {
-      auto reg_arg = loadToReg(callInst->getArgs()[i]);
-      // 入参压栈
+    for (auto *argOnStack : argsOnStack) {
+      auto reg_arg = loadToReg(argOnStack);
       printArmInstr(
           "str", {reg_arg, "[sp, #" + std::to_string(argsOffset) + "]"});
       argsOffset += 4;
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
-    storeRegToMemorySlot(callRegs[0], instr);
+
+    // 返回值存储到栈槽位
+    if (callInst->getType()->isVoidTy()) {
+      // do nothing
+    } else {
+      auto &reg_ret =
+          callInst->getType()->isFloatTy() ? floatRegs.at(0) : intRegs.at(0);
+      storeRegToMemorySlot(reg_ret, instr);
+    }
+
     break;
   }
   default:
