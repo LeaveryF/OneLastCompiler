@@ -158,6 +158,14 @@ public:
             {new Argument{PointerType::get(IntegerType::get()), "dest"},
              new Argument{IntegerType::get(), "n"},
              new Argument{IntegerType::get(), "c"}}),
+        // void _sysy_starttime(int lineno);
+        // void _sysy_stoptime(int lineno);
+        new Function(
+            VoidType::get(), "_sysy_starttime",
+            {new Argument{IntegerType::get(), "lineno"}}),
+        new Function(
+            VoidType::get(), "_sysy_stoptime",
+            {new Argument{IntegerType::get(), "lineno"}}),
     };
 
     for (auto *func : builtins) {
@@ -757,13 +765,24 @@ public:
 
   virtual std::any
   visitFuncCall(sysy2022Parser::FuncCallContext *ctx) override {
-    auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    // auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    Function *callee = nullptr;
+    int lineno = ctx->ID()->getSymbol()->getLine();
     std::vector<Value *> args;
-    // 处理实参
-    for (int i = 0; i < ctx->expr().size(); ++i) {
-      // TODO: array param
-      auto *arg = createRValue(ctx->expr(i), callee->args[i]->getType());
-      args.push_back(arg);
+    if (ctx->ID()->getText() == "starttime" ||
+        ctx->ID()->getText() == "stoptime") {
+      // 宏替换
+      std::string funcName = "_sysy_" + ctx->ID()->getText();
+      callee = cast<Function>(symbolTable.lookup(funcName));
+      args.push_back(new ConstantValue(lineno));
+    } else {
+      callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+      // 处理实参
+      for (int i = 0; i < ctx->expr().size(); ++i) {
+        // TODO: array param
+        auto *arg = createRValue(ctx->expr(i), callee->args[i]->getType());
+        args.push_back(arg);
+      }
     }
     auto *callInst = curBasicBlock->create<CallInst>(callee, args);
     valueMap[ctx] = callInst;
