@@ -487,7 +487,7 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
 std::string ArmWriter::getStackOper(Value *val) {
   if (auto *ld = dyn_cast<LoadInst>(val))
     val = ld->getPointer();
-  return "[sp, " + getImme(stackMap[val], 8) + "]";
+  return "[sp, " + getImme(stackMap[val]) + "]";
 }
 
 std::string ArmWriter::getImme(uint32_t imm, int maxBits) {
@@ -510,7 +510,8 @@ std::string ArmWriter::getImme(float imm) {
   u.f = imm;
   auto reg_int = regAlloc.allocIntReg();
   printArmInstr("movw", {reg_int, "#" + std::to_string(u.i & 0xffff)});
-  printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
+  if (u.i >> 16)
+    printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
   auto reg_flt = regAlloc.allocFloatReg();
   printArmInstr("vmov.f32", {reg_flt, reg_int});
   return reg_flt.abiName();
