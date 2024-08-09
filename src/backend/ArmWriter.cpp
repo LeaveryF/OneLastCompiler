@@ -62,8 +62,7 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
       if (totalCount > arr->values.size()) {
         os << ".zero " << 4 * (totalCount - arr->values.size()) << '\n';
       }
-      os << ".size " << global->getName() << ", " << totalCount * 4
-         << '\n';
+      os << ".size " << global->getName() << ", " << totalCount * 4 << '\n';
     } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       if (constVal->isInt()) {
         os << ".word " << constVal->getInt() << '\n';
@@ -186,8 +185,8 @@ void ArmWriter::printFunc(Function *function) {
 
   // 栈上参数已经被调用方分配，直接插入 stack slot
   int argsOffset = stackSize + pushSize;
-  for (unsigned i = 4; i < function->args.size(); i++) {
-    stackMap[function->args[i]] = argsOffset;
+  for (unsigned i = 0; i < funcCallInfo.argsOnStack.size(); i++) {
+    stackMap[funcCallInfo.argsOnStack[i]] = argsOffset;
     argsOffset += 4;
   }
 
