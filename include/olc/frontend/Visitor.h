@@ -437,6 +437,13 @@ public:
       curBasicBlock->create<ReturnInst>();
     }
 
+    // 若main函数没有ret, 则加上ret指令
+    if (ctx->ID()->getText() == "main" &&
+        (curBasicBlock->instructions.size() == 0 ||
+         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
+      curBasicBlock->create<ReturnInst>(new ConstantValue(0));
+    }
+
     // 退出作用域
     symbolTable.exitScope();
 
