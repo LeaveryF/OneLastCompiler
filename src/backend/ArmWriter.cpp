@@ -487,7 +487,7 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
 std::string ArmWriter::getStackOper(Value *val) {
   if (auto *ld = dyn_cast<LoadInst>(val))
     val = ld->getPointer();
-  return "[sp, " + getImme(stackMap[val]) + "]";
+  return "[sp, " + getImme(stackMap[val], 8) + "]";
 }
 
 std::string ArmWriter::getImme(uint32_t imm, int maxBits) {

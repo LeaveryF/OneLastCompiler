@@ -247,17 +247,25 @@ public:
             printArmInstr("ldr", {reg, "[" + reg_addr.abiName() + "]"});
           }
         } else if (auto *alloca = dyn_cast<AllocaInst>(val)) {
-          printArmInstr("ldr", {reg, getStackOper(val)});
+          if (reg.isFloat) {
+            auto reg_addr = regAlloc.allocIntReg();
+            printArmInstr("add", {reg_addr, "sp", getImme(stackMap[val], 8)});
+            printArmInstr("vldr.32", {reg, "[" + reg_addr.abiName() + "]"});
+          } else {
+            printArmInstr("ldr", {reg, getStackOper(val)});
+          }
         } else { // If non-static address, use memory slot
-          if (!reg.isFloat) {
+          if (reg.isFloat) {
+            // Load from memory slot
+            auto reg_addr = regAlloc.allocIntReg();
+            printArmInstr("ldr", {reg_addr, getStackOper(val)});
+            // Load from the loaded address
+            printArmInstr("vldr.32", {reg, "[" + reg_addr.abiName() + "]"});
+          } else {
             // Load from memory slot
             printArmInstr("ldr", {reg, getStackOper(val)});
             // Load from the loaded address
             printArmInstr("ldr", {reg, "[" + reg.abiName() + "]"});
-          } else {
-            auto reg_addr = regAlloc.allocIntReg();
-            printArmInstr("ldr", {reg_addr, getStackOper(val)});
-            printArmInstr("ldr", {reg, "[" + reg_addr.abiName() + "]"});
           }
         }
       } else {
@@ -269,7 +277,13 @@ public:
           assert(!reg.isFloat && "Address should not be float");
           printArmInstr("add", {reg, "sp", getImme(stackMap[val], 8)});
         } else { // If non-static address, use memory slot
-          printArmInstr("ldr", {reg, getStackOper(val)});
+          if (reg.isFloat) {
+            auto reg_addr = regAlloc.allocIntReg();
+            printArmInstr("add", {reg_addr, "sp", getImme(stackMap[val], 8)});
+            printArmInstr("ldr", {reg, "[" + reg_addr.abiName() + "]"});
+          } else {
+            printArmInstr("ldr", {reg, getStackOper(val)});
+          }
         }
       }
     }
@@ -296,12 +310,24 @@ public:
 
   void storeRegToMemorySlot(const Reg &reg, Value *val) {
     assert(!isa<AllocaInst>(val) && "Alloca has no memory slot.");
-    printArmInstr(reg.isFloat ? "vstr.32" : "str", {reg, getStackOper(val)});
+    if (reg.isFloat) {
+      auto reg_addr = regAlloc.allocIntReg();
+      printArmInstr("add", {reg_addr, "sp", getImme(stackMap[val], 8)});
+      printArmInstr("vstr.32", {reg, "[" + reg_addr.abiName() + "]"});
+    } else {
+      printArmInstr("str", {reg, getStackOper(val)});
+    }
   }
 
   void storeRegToAddress(const Reg &reg, Value *ptr) {
     if (auto *alloca = dyn_cast<AllocaInst>(ptr)) {
-      printArmInstr("str", {reg, getStackOper(ptr)});
+      if (reg.isFloat) {
+        auto reg_addr = regAlloc.allocIntReg();
+        printArmInstr("add", {reg_addr, "sp", getImme(stackMap[ptr], 8)});
+        printArmInstr("vstr.32", {reg, "[" + reg_addr.abiName() + "]"});
+      } else {
+        printArmInstr("str", {reg, getStackOper(ptr)});
+      }
     } else {
       auto reg_ptr = loadToReg(ptr);
       printArmInstr("str", {reg, "[" + reg_ptr.abiName() + "]"});
