@@ -316,17 +316,26 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
         olc_unreachable("Invalid tag");
       }
     } else {
-      auto reg_lhs = loadToReg(cmpInst->getLHS());
-      auto reg_rhs = loadToReg(cmpInst->getRHS());
-      printArmInstr("cmp", {reg_lhs, reg_rhs});
-      if (reg_lhs.isFloat) {
+      if (cmpInst->getLHS()->getType()->isFloatTy()) {
+        auto reg_lhs = loadToReg(cmpInst->getLHS());
+        auto reg_rhs = loadToReg(cmpInst->getRHS());
+        printArmInstr("cmp", {reg_lhs, reg_rhs});
         // 从协处理器中转移条件标志
         printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+        auto reg_res = regAlloc.allocIntReg();
+        printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_res, "#1"});
+        printArmInstr(
+            "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_res, "#0"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else {
+        auto reg_lhs = loadToReg(cmpInst->getLHS());
+        auto reg_rhs = loadToReg(cmpInst->getRHS());
+        printArmInstr("cmp", {reg_lhs, reg_rhs});
+        printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
+        printArmInstr(
+            "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
+        storeRegToMemorySlot(reg_lhs, instr);
       }
-      printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
-      printArmInstr(
-          "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
-      storeRegToMemorySlot(reg_lhs, instr);
     }
     break;
   }
