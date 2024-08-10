@@ -1,4 +1,5 @@
 #include <olc/backend/ArmWriter.h>
+#include <optional>
 
 namespace olc {
 
@@ -50,20 +51,23 @@ void ArmWriter::printGlobalData(GlobalVariable *global) {
     return;
 
   os << global->getName() << ":\n";
-  assert(!global->getAllocatedType()->isFloatTy() && "NYI");
   std::function<void(Constant *)> printConstData = [&](Constant *val) {
     assert(val && "Invalid initializer");
     if (auto *arr = dyn_cast<ConstantArray>(val)) {
       for (auto *elt : arr->values) {
         printConstData(elt);
       }
-      os << ".size " << global->getName() << ", " << arr->values.size() * 4
-         << '\n';
+      size_t totalCount = cast<ArrayType>(arr->getType())->getSize();
+      // 不足的部分自动填充0
+      if (totalCount > arr->values.size()) {
+        os << ".zero " << 4 * (totalCount - arr->values.size()) << '\n';
+      }
+      os << ".size " << global->getName() << ", " << totalCount * 4 << '\n';
     } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
       if (constVal->isInt()) {
         os << ".word " << constVal->getInt() << '\n';
       } else {
-        olc_unreachable("HEX float NYI");
+        os << ".word " << reinterpretFloat(constVal->getFloat()) << '\n';
       }
     } else {
       olc_unreachable("NYI");
@@ -92,14 +96,41 @@ void ArmWriter::printFunc(Function *function) {
   curFunction = function;
   os << function->fnName << ":\n";
 
+  CallInfo funcCallInfo = arrangeCallInfo(function->args);
+
+  // 保护好参数寄存器，直到它们存入栈中
+  std::vector<Reg> argIntRegs, argFloatRegs;
+  for (unsigned i = 0; i < funcCallInfo.argsInIntReg.size(); i++) {
+    argIntRegs.emplace_back(regAlloc.claimIntReg(i));
+  }
+  for (unsigned i = 0; i < funcCallInfo.argsInFloatReg.size(); i++) {
+    argFloatRegs.emplace_back(regAlloc.claimFloatReg(i));
+  }
+
   // 计算栈空间
   stackSize = 0;
   stackMap.clear();
 
-  // TODO: 保存callee-saved寄存器
+  // 给函数内 call 指令的栈参数分配 stack slot
+  // 后续在 Call CodeGen 中直接引用 [sp, #0] 开始的一段栈空间
+  int callStackSize = 0;
+  for (auto &bb : function->basicBlocks) {
+    for (auto &instr : bb->instructions) {
+      if (auto *callInst = dyn_cast<CallInst>(instr)) {
+        CallInfo callInfo = arrangeCallInfo(callInst->getArgs());
+        callStackSize =
+            std::max<int>(callInfo.argsOnStack.size(), callStackSize);
+      }
+    }
+  }
+  stackSize += callStackSize * 4;
 
-  // 给参数分配 stack slot
-  for (auto *arg : function->args) {
+  // 给本函数的寄存器参数分配 stack slot
+  for (auto *arg : funcCallInfo.argsInIntReg) {
+    stackMap[arg] = stackSize;
+    stackSize += 4;
+  }
+  for (auto *arg : funcCallInfo.argsInFloatReg) {
     stackMap[arg] = stackSize;
     stackSize += 4;
   }
@@ -131,21 +162,32 @@ void ArmWriter::printFunc(Function *function) {
       }
     }
   }
-  printArmInstr("push", {"{r11, lr}"});
-  printArmInstr("mov", {"r11", "sp"});
-  if (stackSize > 1024) {
-    auto reg_size = regAlloc.allocIntReg();
-    printArmInstr("ldr", {reg_size, "=" + std::to_string(stackSize)});
-    printArmInstr("sub", {"sp", "sp", reg_size});
-  } else {
-    printArmInstr("sub", {"sp", "sp", "#" + std::to_string(stackSize)});
+
+  printArmInstr("push", {"{lr}"});
+  const int pushSize = 4;
+
+  // 对齐到 8
+  if ((stackSize + pushSize) % 8 != 0) {
+    stackSize += 4;
   }
 
-  // 保存参数到栈
-  assert(function->args.size() < 4 && "NYI");
-  for (unsigned i = 0; i < function->args.size(); i++) {
-    auto reg = regAlloc.claimIntReg(i);
-    storeRegToMemorySlot(reg, function->args[i]);
+  printArmInstr("sub", {"sp", "sp", getImme(stackSize, 8)});
+
+  // 保存寄存器参数到栈
+  for (unsigned i = 0; i < funcCallInfo.argsInIntReg.size(); i++) {
+    storeRegToMemorySlot(argIntRegs.at(i), funcCallInfo.argsInIntReg.at(i));
+  }
+  for (unsigned i = 0; i < funcCallInfo.argsInFloatReg.size(); i++) {
+    storeRegToMemorySlot(argFloatRegs.at(i), funcCallInfo.argsInFloatReg.at(i));
+  }
+  argIntRegs.clear();
+  argFloatRegs.clear();
+
+  // 栈上参数已经被调用方分配，直接插入 stack slot
+  int argsOffset = stackSize + pushSize;
+  for (unsigned i = 0; i < funcCallInfo.argsOnStack.size(); i++) {
+    stackMap[funcCallInfo.argsOnStack[i]] = argsOffset;
+    argsOffset += 4;
   }
 
   for (auto &bb : function->basicBlocks) {
@@ -176,7 +218,7 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     auto reg_ptr = loadToReg(gep->getPointer());
     if (auto *constIndex = dyn_cast<ConstantValue>(gep->getIndex())) {
       int offset = 4 * constIndex->getInt();
-      printArmInstr("add", {reg_ptr, reg_ptr, "#" + std::to_string(offset)});
+      printArmInstr("add", {reg_ptr, reg_ptr, getImme(offset, 8)});
     } else {
       std::string reg_offset = loadToReg(gep->getIndex());
       printArmInstr("add", {reg_ptr, reg_ptr, reg_offset, "lsl #2"});
@@ -201,12 +243,19 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     printBinInstr("mul", instr);
     break;
   case Value::Tag::Div: {
-    auto reg_lhs = regAlloc.claimIntReg(0);
-    loadToSpecificReg(reg_lhs, instr->getOperand(0));
-    auto reg_rhs = regAlloc.claimIntReg(1);
-    loadToSpecificReg(reg_rhs, instr->getOperand(1));
-    printArmInstr("bl", {"__aeabi_idiv"});
-    storeRegToMemorySlot(reg_lhs, instr);
+    if (instr->getType()->isIntegerTy()) {
+      auto reg_lhs = regAlloc.claimIntReg(0);
+      loadToSpecificReg(reg_lhs, instr->getOperand(0));
+      auto reg_rhs = regAlloc.claimIntReg(1);
+      loadToSpecificReg(reg_rhs, instr->getOperand(1));
+      printArmInstr("bl", {"__aeabi_idiv"});
+      storeRegToMemorySlot(reg_lhs, instr);
+    } else {
+      auto reg_lhs = loadToReg(instr->getOperand(0));
+      auto reg_rhs = loadToReg(instr->getOperand(1));
+      printArmInstr("vdiv.f32", {reg_lhs, reg_lhs, reg_rhs});
+      storeRegToMemorySlot(reg_lhs, instr);
+    }
     break;
   }
   case Value::Tag::Mod: {
@@ -218,6 +267,24 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     // 假设idivmod将除法结果放在R0，模结果放在R1
     printArmInstr("mov", {reg_rhs, "r1"}); // 将模结果移动到目标寄存器
     storeRegToMemorySlot(reg_rhs, instr);
+    break;
+  }
+  case Value::Tag::IntToFloat: {
+    auto *i2fInst = cast<IntToFloatInst>(instr);
+    auto ireg = loadToReg(instr->getOperand(0));
+    auto freg = regAlloc.allocFloatReg();
+    printArmInstr("vmov.f32", {freg, ireg});
+    printArmInstr("vcvt.f32.s32", {freg, freg});
+    storeRegToMemorySlot(freg, instr);
+    break;
+  }
+  case Value::Tag::FloatToInt: {
+    auto *f2iInst = cast<FloatToIntInst>(instr);
+    auto freg = loadToReg(instr->getOperand(0));
+    printArmInstr("vcvt.s32.f32", {freg, freg});
+    auto ireg = regAlloc.allocIntReg();
+    printArmInstr("vmov.f32", {ireg, freg});
+    storeRegToMemorySlot(ireg, instr);
     break;
   }
   case Value::Tag::Lt:
@@ -249,13 +316,26 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
         olc_unreachable("Invalid tag");
       }
     } else {
-      auto reg_lhs = loadToReg(cmpInst->getLHS());
-      auto reg_rhs = loadToReg(cmpInst->getRHS());
-      printArmInstr("cmp", {reg_lhs, reg_rhs});
-      printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
-      printArmInstr(
-          "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
-      storeRegToMemorySlot(reg_lhs, instr);
+      if (cmpInst->getLHS()->getType()->isFloatTy()) {
+        auto reg_lhs = loadToReg(cmpInst->getLHS());
+        auto reg_rhs = loadToReg(cmpInst->getRHS());
+        printArmInstr("cmp", {reg_lhs, reg_rhs});
+        // 从协处理器中转移条件标志
+        printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+        auto reg_res = regAlloc.allocIntReg();
+        printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_res, "#1"});
+        printArmInstr(
+            "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_res, "#0"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      } else {
+        auto reg_lhs = loadToReg(cmpInst->getLHS());
+        auto reg_rhs = loadToReg(cmpInst->getRHS());
+        printArmInstr("cmp", {reg_lhs, reg_rhs});
+        printArmInstr("mov" + getCondTagStr(cmpInst->tag), {reg_lhs, "#1"});
+        printArmInstr(
+            "mov" + getCondTagStr(getNotCond(cmpInst->tag)), {reg_lhs, "#0"});
+        storeRegToMemorySlot(reg_lhs, instr);
+      }
     }
     break;
   }
@@ -276,31 +356,75 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
     break;
   case Value::Tag::Return: {
     auto *retInst = cast<ReturnInst>(instr);
-    // if not ret void
-    // TODO: consider float type
-    Reg reg_ret = regAlloc.claimIntReg(0);
-    if (retInst->getNumOperands() == 1)
-      assignToSpecificReg(reg_ret, retInst->getReturnValue());
-    printArmInstr("mov", {"sp", "r11"});
-    printArmInstr("pop", {"{r11, lr}"});
+    std::optional<Reg> reg_ret;
+    if (retInst->getNumOperands() == 1) {
+      reg_ret = retInst->getReturnValue()->getType()->isIntegerTy()
+                    ? regAlloc.claimIntReg(0)
+                    : regAlloc.claimFloatReg(0);
+      assignToSpecificReg(*reg_ret, retInst->getReturnValue());
+    }
+    printArmInstr("add", {"sp", "sp", getImme(stackSize, 8)});
+    printArmInstr("pop", {"{lr}"});
     printArmInstr("bx", {"lr"});
     break;
   }
   case Value::Tag::Call: {
     auto *callInst = cast<CallInst>(instr);
-    assert(callInst->getArgs().size() < 4 && "NYI");
-    std::vector<Reg> callRegs;
-    callRegs.emplace_back(regAlloc.claimIntReg(0));
-    for (unsigned i = 1; i < callInst->getArgs().size(); i++)
-      callRegs.emplace_back(regAlloc.claimIntReg(i));
+    auto args = callInst->getArgs();
+    auto &&[argsInIntRegs, argsInFloatRegs, argsOnStack] =
+        arrangeCallInfo(args);
 
-    // TODO: consider float
+    // 认领寄存器
+    std::unordered_map<int, Reg> intRegs, floatRegs;
+    auto claimReg = [&](bool isFloat, int i) {
+      if (isFloat) {
+        if (floatRegs.find(i) == floatRegs.end()) {
+          floatRegs.emplace(i, regAlloc.claimFloatReg(i));
+        }
+      } else {
+        if (intRegs.find(i) == intRegs.end()) {
+          intRegs.emplace(i, regAlloc.claimIntReg(i));
+        }
+      }
+    };
 
-    for (unsigned i = 0; i < callInst->getArgs().size(); i++) {
-      assignToSpecificReg(callRegs[i], callInst->getArgs()[i]);
+    // 返回值 r0 / s0
+    claimReg(callInst->getType()->isFloatTy(), 0);
+    // 参数 r0-r3 / s0-s15
+    for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
+      claimReg(false, i);
+    }
+    for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
+      claimReg(true, i);
+    }
+
+    // 寄存器入参
+    for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
+      assignToSpecificReg(intRegs.at(i), argsInIntRegs[i]);
+    }
+    for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
+      assignToSpecificReg(floatRegs.at(i), argsInFloatRegs[i]);
+    }
+
+    // 其它入参压栈
+    int argsOffset = 0;
+    for (auto *argOnStack : argsOnStack) {
+      auto reg_arg = loadToReg(argOnStack);
+      printArmInstr(
+          "str", {reg_arg, "[sp, #" + std::to_string(argsOffset) + "]"});
+      argsOffset += 4;
     }
     printArmInstr("bl", {callInst->getCallee()->fnName});
-    storeRegToMemorySlot(callRegs[0], instr);
+
+    // 返回值存储到栈槽位
+    if (callInst->getType()->isVoidTy()) {
+      // do nothing
+    } else {
+      auto &reg_ret =
+          callInst->getType()->isFloatTy() ? floatRegs.at(0) : intRegs.at(0);
+      storeRegToMemorySlot(reg_ret, instr);
+    }
+
     break;
   }
   default:
@@ -311,11 +435,27 @@ void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
   }
 }
 
+static std::unordered_map<std::string, std::string> intInstr2FltInstrOpCode{
+    {"add", "vadd.f32"}, {"sub", "vsub.f32"}, {"mul", "vmul.f32"},
+    {"div", "vdiv.f32"}, {"cmp", "vcmp.f32"}, {"mov", "vmov.f32"},
+    {"ldr", "vldr.32"},  {"str", "vstr.32"},
+};
+
 void ArmWriter::printArmInstr(
     const std::string &op, const std::vector<std::string> &operands) {
+
   // indent for instructions
   os << "  ";
-  os << op;
+
+  auto isFloatRegName = [](std::string const &name) {
+    return name != "sp" && name.at(0) == 's';
+  };
+
+  if (intInstr2FltInstrOpCode.count(op) && isFloatRegName(operands.at(0))) {
+    os << intInstr2FltInstrOpCode[op];
+  } else {
+    os << op;
+  }
   os << " ";
   for (int i = 0; i < operands.size(); ++i) {
     if (i > 0) {
@@ -338,21 +478,43 @@ void ArmWriter::printCmpInstr(BinaryInst *instr) {
   auto reg_lhs = loadToReg(instr->getOperand(0));
   auto reg_rhs = loadToReg(instr->getOperand(1));
   printArmInstr("cmp", {reg_lhs, reg_rhs});
+  if (reg_lhs.isFloat) {
+    // 从协处理器中转移条件标志
+    printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+  }
 }
 
 std::string ArmWriter::getStackOper(Value *val) {
   if (auto *ld = dyn_cast<LoadInst>(val))
     val = ld->getPointer();
-  return "[sp, #" + std::to_string(stackMap.at(val)) + "]";
+  return "[sp, " + getImme(stackMap[val]) + "]";
 }
 
-std::string ArmWriter::getImme(ConstantValue *val) { // TODO: float
-  if (val->isInt()) {
-    return "#" + std::to_string(val->getInt());
+std::string ArmWriter::getImme(uint32_t imm, int maxBits) {
+  if (imm < (1 << maxBits)) {
+    return "#" + std::to_string(imm);
   } else {
-    // TODO: ensure it is correct
-    return "#" + std::to_string(val->getFloat());
+    auto reg = regAlloc.allocIntReg();
+    printArmInstr("movw", {reg, "#" + std::to_string(imm & 0xffff)});
+    printArmInstr("movt", {reg, "#" + std::to_string(imm >> 16)});
+    return reg.abiName();
   }
+}
+
+std::string ArmWriter::getImme(float imm) {
+  // reinterpret and load int
+  union {
+    float f;
+    uint32_t i;
+  } u;
+  u.f = imm;
+  auto reg_int = regAlloc.allocIntReg();
+  printArmInstr("movw", {reg_int, "#" + std::to_string(u.i & 0xffff)});
+  if (u.i >> 16)
+    printArmInstr("movt", {reg_int, "#" + std::to_string(u.i >> 16)});
+  auto reg_flt = regAlloc.allocFloatReg();
+  printArmInstr("vmov.f32", {reg_flt, reg_int});
+  return reg_flt.abiName();
 }
 
 std::string ArmWriter::getLabel(BasicBlock *bb) {

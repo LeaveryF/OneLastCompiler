@@ -65,16 +65,27 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
     return valueMap.at(ctx);
   }
 
-  Value *createRValue(antlr4::ParserRuleContext *ctx) {
+  Value *
+  createRValue(antlr4::ParserRuleContext *ctx, Type *targetType = nullptr) {
     visit(ctx);
+    auto *rVal = valueMap.at(ctx);
     if (isLValueMap[ctx]) {
-      return curBasicBlock->create<LoadInst>(valueMap.at(ctx));
+      return curBasicBlock->create<LoadInst>(rVal);
     }
-    return valueMap.at(ctx);
+    if (targetType) {
+      if (targetType->isFloatTy() && rVal->getType()->isIntegerTy()) {
+        rVal = curBasicBlock->create<IntToFloatInst>(rVal);
+      } else if (targetType->isIntegerTy() && rVal->getType()->isFloatTy()) {
+        rVal = curBasicBlock->create<FloatToIntInst>(rVal);
+      } else {
+        ; // do nothing
+      }
+    }
+    return rVal;
   }
 
   Value *createCondValue(antlr4::ParserRuleContext *ctx) {
-    auto *expr = createRValue(ctx);
+    auto *expr = createRValue(ctx, nullptr);
     if (auto *binExpr = dyn_cast<BinaryInst>(expr);
         binExpr && binExpr->isCmpOp()) {
       return binExpr;
@@ -87,6 +98,22 @@ class CodeGenASTVisitor : public sysy2022BaseVisitor {
         return curBasicBlock->create<BinaryInst>(
             Value::Tag::Ne, expr, new ConstantValue(0.f));
       }
+    }
+  }
+
+  void typeConversion(Value **left, Value **right) {
+    if ((*left)->getType()->isIntegerTy() &&
+            (*right)->getType()->isIntegerTy() ||
+        (*left)->getType()->isFloatTy() && (*right)->getType()->isFloatTy()) {
+      return;
+    }
+    if ((*left)->getType()->isIntegerTy()) {
+      *left = curBasicBlock->create<IntToFloatInst>(*left);
+      return;
+    }
+    if ((*right)->getType()->isIntegerTy()) {
+      *right = curBasicBlock->create<IntToFloatInst>(*right);
+      return;
     }
   }
 
@@ -124,7 +151,22 @@ public:
         new Function(
             VoidType::get(), "putfarray",
             {new Argument{IntegerType::get(), "n"},
-             new Argument{PointerType::get(FloatType::get()), "a"}})};
+             new Argument{PointerType::get(FloatType::get()), "a"}}),
+        // void __aeabi_memset(void *dest, size_t n, int c);
+        new Function(
+            VoidType::get(), "__aeabi_memset",
+            {new Argument{PointerType::get(IntegerType::get()), "dest"},
+             new Argument{IntegerType::get(), "n"},
+             new Argument{IntegerType::get(), "c"}}),
+        // void _sysy_starttime(int lineno);
+        // void _sysy_stoptime(int lineno);
+        new Function(
+            VoidType::get(), "_sysy_starttime",
+            {new Argument{IntegerType::get(), "lineno"}}),
+        new Function(
+            VoidType::get(), "_sysy_stoptime",
+            {new Argument{IntegerType::get(), "lineno"}}),
+    };
 
     for (auto *func : builtins) {
       func->isBuiltin = true;
@@ -156,57 +198,20 @@ public:
           size *= dimSizes.back();
         }
         Type *arrayType = ArrayType::get(type, size);
-        if (ctx->isConst) {
-          // 常量数组
-          std::vector<Constant *> values(size, nullptr);
-          int index = 0;
-
-          std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
-          dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
-            for (auto *val : ctx->initVal()) {
-              if (val->expr()) {
-                values[index++] = constFolder.resolve(val->expr());
-              } else {
-                int match = 1, matchDim = dimSizes.size();
-                while (--matchDim > dim) {
-                  if (index % (match * dimSizes[matchDim]) == 0) {
-                    match *= dimSizes[matchDim];
-                  } else {
-                    break;
-                  }
-                }
-                if (matchDim == dimSizes.size() - 1) {
-                  olc_unreachable("初始化列表错误");
-                }
-                dfs(val, dim + 1, index + match);
-              }
-            }
-            while (index < len) {
-              if (type->isFloatTy()) {
-                values[index++] = new ConstantValue(0.f);
-              } else {
-                values[index++] = new ConstantValue(0);
-              }
-            }
-          };
-          dfs(varDef->initVal(), 0, size);
-          symbolTable.insert(
-              varName, new ConstantArray(arrayType, values), dimSizes);
-        } else if (isGlobal) {
-          // 全局数组
+        if (ctx->isConst || isGlobal) {
+          // 全局数组 / 常量数组
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            std::vector<Constant *> values(size, nullptr);
-            int index = 0;
+            std::vector<Constant *> values;
             std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
-                  values[index++] = constFolder.resolve(val->expr());
+                  values.push_back(constFolder.resolve(val->expr(), type));
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
-                    if (index % (match * dimSizes[matchDim]) == 0) {
+                    if (values.size() % (match * dimSizes[matchDim]) == 0) {
                       match *= dimSizes[matchDim];
                     } else {
                       break;
@@ -215,19 +220,33 @@ public:
                   if (matchDim == dimSizes.size() - 1) {
                     olc_unreachable("初始化列表错误");
                   }
-                  dfs(val, dim + 1, index + match);
+                  dfs(val, dim + 1, values.size() + match);
                 }
               }
-              while (index < len) {
+              // 如果是填充到最后，省略末尾的0
+              if (len == size)
+                return;
+              while (values.size() < len) {
                 if (type->isFloatTy()) {
-                  values[index++] = new ConstantValue(0.f);
+                  values.push_back(new ConstantValue(0.f));
                 } else {
-                  values[index++] = new ConstantValue(0);
+                  values.push_back(new ConstantValue(0));
                 }
               }
             };
             dfs(varDef->initVal(), 0, size);
-            initializer = cast<Constant>(new ConstantArray(arrayType, values));
+            bool allZero =
+                std::all_of(values.begin(), values.end(), [&](Constant *val) {
+                  if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+                    return constVal->isInt() && constVal->getInt() == 0;
+                  }
+                  return false;
+                });
+            if (!allZero)
+              initializer =
+                  cast<Constant>(new ConstantArray(arrayType, values));
+            else
+              initializer = nullptr;
           }
           GlobalVariable *globalVar =
               new GlobalVariable(arrayType, varName, initializer);
@@ -242,11 +261,19 @@ public:
             std::vector<Value *> values(size, nullptr);
             int index = 0;
 
+            bool allZero = true;
             std::function<void(sysy2022Parser::InitValContext *, int, int)> dfs;
             dfs = [&](sysy2022Parser::InitValContext *ctx, int dim, int len) {
               for (auto *val : ctx->initVal()) {
                 if (val->expr()) {
-                  values[index++] = createRValue(val->expr());
+                  values[index++] = createRValue(val->expr(), type);
+                  auto *constVal = dyn_cast<ConstantValue>(values[index - 1]);
+                  if (!constVal)
+                    allZero = false;
+                  else if (constVal->isInt() && constVal->getInt() != 0)
+                    allZero = false;
+                  else if (constVal->isFloat() && constVal->getFloat() != 0.f)
+                    allZero = false;
                 } else {
                   int match = 1, matchDim = dimSizes.size();
                   while (--matchDim > dim) {
@@ -262,20 +289,39 @@ public:
                   dfs(val, dim + 1, index + match);
                 }
               }
-              while (index < len) {
-                if (type->isFloatTy()) {
-                  values[index++] = new ConstantValue(0.f);
-                } else {
-                  values[index++] = new ConstantValue(0);
-                }
-              }
+              index = len;
             };
             dfs(varDef->initVal(), 0, size);
             // 初始化数组
-            for (int i = 0; i < (int)size; ++i) {
-              Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
-                  allocaInst, new ConstantValue(i));
-              curBasicBlock->create<StoreInst>(values[i], elementPtr);
+            // 如果所有值为零，使用__aeabi_memset初始化
+            if (allZero) {
+              // void __aeabi_memset(void *dest, size_t n, int c);
+              Function *memsetFunc =
+                  cast<Function>(symbolTable.lookup("__aeabi_memset"));
+              Value *basePtr = curBasicBlock->create<GetElementPtrInst>(
+                  allocaInst, new ConstantValue(0));
+              std::vector<Value *> args;
+              args.push_back(basePtr);
+              args.push_back(new ConstantValue((int)size * 4));
+              args.push_back(new ConstantValue(0));
+              curBasicBlock->create<CallInst>(memsetFunc, args);
+            } else {
+              // 否则正常初始化数组
+              // 先遍历一遍将nullptr替换为0
+              for (int i = 0; i < (int)size; ++i) {
+                if (!values[i]) {
+                  if (type->isFloatTy()) {
+                    values[i] = new ConstantValue(0.f);
+                  } else {
+                    values[i] = new ConstantValue(0);
+                  }
+                }
+              }
+              for (int i = 0; i < (int)size; ++i) {
+                Value *elementPtr = curBasicBlock->create<GetElementPtrInst>(
+                    allocaInst, new ConstantValue(i));
+                curBasicBlock->create<StoreInst>(values[i], elementPtr);
+              }
             }
           }
         }
@@ -285,14 +331,14 @@ public:
           // 常量变量
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal());
+            initializer = constFolder.resolve(varDef->initVal(), type);
           }
           symbolTable.insert(varName, initializer);
         } else if (isGlobal) {
           // 初始化全局变量的值
           Constant *initializer = nullptr;
           if (varDef->initVal()) {
-            initializer = constFolder.resolve(varDef->initVal());
+            initializer = constFolder.resolve(varDef->initVal(), type);
             // 判断全局变量是否为常量
           }
           GlobalVariable *globalVar =
@@ -305,7 +351,7 @@ public:
           symbolTable.insert(varName, allocaInst);
           // 处理初始化表达式（如果有）
           if (varDef->initVal()) {
-            Value *initVal = createRValue(varDef->initVal());
+            Value *initVal = createRValue(varDef->initVal()->expr(), type);
             curBasicBlock->create<StoreInst>(initVal, allocaInst);
           }
         }
@@ -320,12 +366,7 @@ public:
   }
 
   virtual std::any visitInitVal(sysy2022Parser::InitValContext *ctx) override {
-    if (ctx->expr()) {
-      valueMap[ctx] = createRValue(ctx->expr());
-    } else {
-      // TODO: 处理初始化列表
-      olc_unreachable("NYI");
-    }
+    olc_unreachable("Never");
     return {};
   }
 
@@ -334,7 +375,6 @@ public:
   //--------------------------------------------------------------------------
   virtual std::any visitFuncDef(sysy2022Parser::FuncDefContext *ctx) override {
     labelCnt = 0;
-    earlyExit = false;
 
     // 初始化函数
     auto *retType = convertType(ctx->funcType->getText());
@@ -395,11 +435,19 @@ public:
       curBasicBlock->create<ReturnInst>();
     }
 
+    // 若main函数没有ret, 则加上ret指令
+    if (ctx->ID()->getText() == "main" &&
+        (curBasicBlock->instructions.size() == 0 ||
+         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
+      curBasicBlock->create<ReturnInst>(new ConstantValue(0));
+    }
+
     // 退出作用域
     symbolTable.exitScope();
 
     curFunction = nullptr;
     curBasicBlock = nullptr;
+    earlyExit = false;
 
     return {};
   }
@@ -431,10 +479,12 @@ public:
     if (earlyExit)
       return {};
 
-    // 获取右值
-    auto *rVal = createRValue(ctx->expr());
-    // 创建指令
+    // 获取左值
     auto *lVal = createLValue(ctx->lVal());
+    // 获取右值
+    auto *rVal =
+        createRValue(ctx->expr(), lVal->getType()->getPointerEltType());
+    // 创建指令
     curBasicBlock->create<StoreInst>(rVal, lVal);
     return {};
   }
@@ -626,7 +676,7 @@ public:
     earlyExit = true;
     if (ctx->expr()) {
       // 获取子操作数
-      auto *retVal = createRValue(ctx->expr());
+      auto *retVal = createRValue(ctx->expr(), curFunction->getReturnType());
       // 创建指令
       Value *result = curBasicBlock->create<ReturnInst>(retVal);
     } else {
@@ -640,11 +690,11 @@ public:
   //--------------------------------------------------------------------------
   virtual std::any
   visitAddSubExpr(sysy2022Parser::AddSubExprContext *ctx) override {
-    // TODO: 类型转换
     // 获取左操作数
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     auto *right = createRValue(ctx->expr(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "+") {
@@ -670,6 +720,7 @@ public:
     auto *left = createRValue(ctx->expr(0));
     // 获取右操作数
     auto *right = createRValue(ctx->expr(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "*") {
@@ -731,12 +782,24 @@ public:
 
   virtual std::any
   visitFuncCall(sysy2022Parser::FuncCallContext *ctx) override {
-    auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    // auto *callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+    Function *callee = nullptr;
+    int lineno = ctx->ID()->getSymbol()->getLine();
     std::vector<Value *> args;
-    // 处理实参
-    for (const auto &argCtx : ctx->expr()) {
-      auto *arg = createRValue(argCtx);
-      args.push_back(arg);
+    if (ctx->ID()->getText() == "starttime" ||
+        ctx->ID()->getText() == "stoptime") {
+      // 宏替换
+      std::string funcName = "_sysy_" + ctx->ID()->getText();
+      callee = cast<Function>(symbolTable.lookup(funcName));
+      args.push_back(new ConstantValue(lineno));
+    } else {
+      callee = cast<Function>(symbolTable.lookup(ctx->ID()->getText()));
+      // 处理实参
+      for (int i = 0; i < ctx->expr().size(); ++i) {
+        // TODO: array param
+        auto *arg = createRValue(ctx->expr(i), callee->args[i]->getType());
+        args.push_back(arg);
+      }
     }
     auto *callInst = curBasicBlock->create<CallInst>(callee, args);
     valueMap[ctx] = callInst;
@@ -752,7 +815,6 @@ public:
     } else if (ctx->op->getText() == "-") {
       // -x => 0 - x
       auto *subVal = createRValue(ctx->unaryExpr());
-      // 判断类型
       Value *result = nullptr;
       if (subVal->getType()->isFloatTy()) {
         result = curBasicBlock->create<BinaryInst>(
@@ -763,8 +825,7 @@ public:
       }
       valueMap[ctx] = result;
     } else {
-      auto *subVal = createRValue(ctx->unaryExpr());
-      // 隐式类型转换
+      auto *subVal = createRValue(ctx->unaryExpr(), IntegerType::get());
       Value *result = nullptr;
       if (subVal->getType()->isIntegerTy()) {
         result = curBasicBlock->create<BinaryInst>(
@@ -784,6 +845,7 @@ public:
     std::vector<int> shape = symbolTable.lookupShape(varName);
 
     if (!isa<GlobalVariable>(lVal) && isa<Constant>(lVal)) {
+      // pass through the constant, i2f and f2i should be done in createRValue
       valueMap[ctx] = constFolder.resolve(ctx);
       isLValueMap[ctx] = false;
       return {};
@@ -797,7 +859,7 @@ public:
 
     std::vector<Value *> indices;
     for (auto *expr : ctx->expr()) {
-      indices.push_back(createRValue(expr));
+      indices.push_back(createRValue(expr, IntegerType::get()));
     }
     Value *offset = new ConstantValue(0);
     for (int i = indices.size(); i--;) {
@@ -826,6 +888,7 @@ public:
     auto *left = createRValue(ctx->cond(0));
     // 获取右操作数
     auto *right = createRValue(ctx->cond(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "==") {
@@ -910,6 +973,7 @@ public:
     auto *left = createRValue(ctx->cond(0));
     // 获取右操作数
     auto *right = createRValue(ctx->cond(1));
+    typeConversion(&left, &right);
     // 创建指令
     Value::Tag tag = Value::Tag::Undef;
     if (ctx->op->getText() == "<") {
