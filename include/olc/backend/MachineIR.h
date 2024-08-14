@@ -6,6 +6,7 @@
 #include <list>
 #include <string>
 #include <vector>
+#include <set>
 
 namespace olc {
 
@@ -217,6 +218,7 @@ struct AsmMoveInst : AsmInst {
 
 struct AsmCallInst : AsmInst {
   std::string callee;
+  std::set<PReg *> callDefs, callUses;
 
   AsmCallInst(std::string callee) : AsmInst(Tag::Call), callee(callee) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Call; }

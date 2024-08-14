@@ -6,6 +6,8 @@
 #include <olc/ir/IR.h>
 
 #include <map>
+#include <optional>
+#include <vector>
 
 namespace olc {
 
@@ -103,6 +105,34 @@ struct CodeGen {
     }
   }
 
+  struct CallInfo {
+    std::vector<Value *> argsInIntReg, argsInFloatReg;
+    std::vector<Value *> argsOnStack;
+  };
+
+  template <typename T>
+  auto arrangeCallInfo(std::vector<T> const &args) -> CallInfo {
+    CallInfo info{};
+    constexpr size_t maxIntRegs = 4, maxFloatRegs = 16;
+    for (unsigned i = 0; i < args.size(); i++) {
+      auto arg = cast<Value>(args[i]);
+      if (arg->getType()->isFloatTy()) {
+        if (info.argsInFloatReg.size() < maxFloatRegs) {
+          info.argsInFloatReg.push_back(arg);
+        } else {
+          info.argsOnStack.push_back(arg);
+        }
+      } else {
+        if (info.argsInIntReg.size() < maxIntRegs) {
+          info.argsInIntReg.push_back(arg);
+        } else {
+          info.argsOnStack.push_back(arg);
+        }
+      }
+    }
+    return info;
+  }
+
   void run() {
     for (auto *irFunc : irModule->functions) {
       auto asmFunc = new AsmFunc{irFunc->fnName};
@@ -168,35 +198,43 @@ struct CodeGen {
             asmStoreInst->src = reg_src;
             asmLabel->push_back(asmStoreInst);
           } else if (auto *irCallInst = dyn_cast<CallInst>(irInst)) {
+            auto *asmCallInst =
+                new AsmCallInst{irCallInst->getCallee()->fnName};
             auto args = irCallInst->getArgs();
-            // 参数 r0-r3 / s0-s15
-            for (int i = 0; i < args.size(); ++i) {
-              if (i < 4) {
-                // 寄存器传参
-                auto *asmMovInst = new AsmMoveInst{};
-                asmMovInst->src = lowerValue(args[i], asmLabel);
-                asmMovInst->dst =
-                    AsmReg::makePReg(convertType(args[i]->getType()), i);
-                asmLabel->push_back(asmMovInst);
-              } else {
-                // 栈传参
-                olc_unreachable("NYI");
-              }
-              // bl fname
-              auto *asmCallInst =
-                  new AsmCallInst{irCallInst->getCallee()->fnName};
-              asmLabel->push_back(asmCallInst);
-              // 返回值
-              if (!irCallInst->getType()->isVoidTy()) {
-                // mov value, r0 / s0
-                valueMap[irCallInst] =
-                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
-                auto *asmMovInst = new AsmMoveInst{};
-                asmMovInst->src =
-                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
-                asmMovInst->dst = lowerValue(irCallInst, asmLabel);
-                asmLabel->push_back(asmMovInst);
-              }
+            CallInfo info = arrangeCallInfo(args);
+
+            for (unsigned i = 0; i < info.argsInIntReg.size(); ++i) {
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = lowerValue(args[i], asmLabel);
+              auto *preg = AsmReg::makePReg(convertType(args[i]->getType()), i);
+              asmMovInst->dst = preg;
+              asmCallInst->callUses.insert(preg);
+              asmLabel->push_back(asmMovInst);
+            }
+            for (unsigned i = 0; i < info.argsInFloatReg.size(); ++i) {
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = lowerValue(args[i], asmLabel);
+              auto *preg = AsmReg::makePReg(convertType(args[i]->getType()), i);
+              asmMovInst->dst = preg;
+              asmCallInst->callUses.insert(preg);
+              asmLabel->push_back(asmMovInst);
+            }
+            for (unsigned i = 0; i < info.argsOnStack.size(); ++i) {
+              olc_unreachable("NYI");
+            }
+            // bl fnName
+            asmLabel->push_back(asmCallInst);
+            // 返回值
+            if (!irCallInst->getType()->isVoidTy()) {
+              // mov value, r0 / s0
+              auto *preg =
+                  AsmReg::makePReg(convertType(irCallInst->getType()), 0);
+              asmCallInst->callDefs.insert(preg);
+              valueMap[irCallInst] = preg;
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = preg;
+              asmMovInst->dst = lowerValue(irCallInst, asmLabel);
+              asmLabel->push_back(asmMovInst);
             }
           } else if (auto *irBranchInst = dyn_cast<BranchInst>(irInst)) {
             // 处理分支指令
