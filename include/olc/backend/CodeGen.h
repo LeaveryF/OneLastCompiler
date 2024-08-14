@@ -94,7 +94,7 @@ struct CodeGen {
               asmMovInst->src = lowerValue(retVal, asmLabel);
               asmMovInst->dst =
                   AsmReg::makePReg(convertType(retVal->getType()), 0);
-              asmLabel->insts.push_back(asmMovInst);
+              asmLabel->push_back(asmMovInst);
             }
             asmLabel->create<AsmReturnInst>();
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
@@ -106,7 +106,7 @@ struct CodeGen {
             asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
             asmBinInst->dst = reg_res;
             valueMap[irBinInst] = reg_res;
-            asmLabel->insts.push_back(asmBinInst);
+            asmLabel->push_back(asmBinInst);
           } else if (auto *irAllocaInst = dyn_cast<AllocaInst>(irInst)) {
             auto *spOffsetInst = new AsmBinaryInst{};
             spOffsetInst->tag = AsmInst::Add;
@@ -115,21 +115,21 @@ struct CodeGen {
             spOffsetInst->dst = AsmReg::makeVReg(AsmType::I32);
             valueMap[irAllocaInst] = spOffsetInst->dst;
             asmFunc->stackSize += irAllocaInst->getAllocatedSize();
-            asmLabel->insts.push_back(spOffsetInst);
+            asmLabel->push_back(spOffsetInst);
           } else if (auto *irLoadInst = dyn_cast<LoadInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irLoadInst->getType()));
             auto *asmLoadInst = new AsmLoadInst{};
             asmLoadInst->addr = lowerValue(irLoadInst->getPointer(), asmLabel);
             asmLoadInst->dst = reg_res;
             valueMap[irLoadInst] = reg_res;
-            asmLabel->insts.push_back(asmLoadInst);
+            asmLabel->push_back(asmLoadInst);
           } else if (auto *irStoreInst = dyn_cast<StoreInst>(irInst)) {
             auto reg_src = lowerValueToReg(irStoreInst->getValue(), asmLabel);
             auto *asmStoreInst = new AsmStoreInst{};
             asmStoreInst->addr =
                 lowerValue(irStoreInst->getPointer(), asmLabel);
             asmStoreInst->src = reg_src;
-            asmLabel->insts.push_back(asmStoreInst);
+            asmLabel->push_back(asmStoreInst);
           } else {
             olc_unreachable("NYI");
           }

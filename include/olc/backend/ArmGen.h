@@ -46,7 +46,7 @@ struct ArmGen {
       if (func->isBuiltin)
         continue;
       for (auto *label : func->labels) {
-        for (auto *inst : label->insts) {
+        for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
           for (auto refdef : inst->getDefs()) {
             auto &def = *refdef;
             assert(isa<AsmReg>(def) && "Non-reg def!");
@@ -106,7 +106,7 @@ struct ArmGen {
       for (auto *label : func->labels) {
         // TODO: label name uniquer
         os << "." << label->name << ":\n";
-        for (auto *inst : label->insts) {
+        for (auto *inst = label->Head; inst; inst = inst->Next) {
           if (auto *retInst = dyn_cast<AsmReturnInst>(inst)) {
             printArmInstr(
                 "add", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
@@ -164,7 +164,8 @@ struct ArmGen {
               auto imm = cast<AsmImm>(binInst->rhs);
               assert(imm->hexValue < 4096 && "imm12bit, large imm NYI");
               printArmInstr(
-                  op, {reg_dst->abiName(), reg_lhs->abiName(), "#" + std::to_string(imm->hexValue)});
+                  op, {reg_dst->abiName(), reg_lhs->abiName(),
+                       "#" + std::to_string(imm->hexValue)});
             }
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
             auto reg_dst = cast<PReg>(ldInst->dst);

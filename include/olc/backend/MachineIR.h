@@ -87,7 +87,7 @@ struct AsmImm : AsmValue {
   static bool classof(const AsmValue *v) { return v->tag == Tag::Imm; }
 };
 
-struct AsmInst {
+struct AsmInst : IListNode<AsmInst> {
   enum Tag {
     Add,
     Sub,
@@ -112,16 +112,15 @@ struct AsmInst {
   virtual std::vector<AsmValue **> getUses() = 0;
 };
 
-struct AsmLabel {
+struct AsmLabel : IList<AsmInst> {
   std::string name;
-  std::list<AsmInst *> insts;
   // other informations
 
   AsmLabel(std::string name) : name(name) {}
 
   template <class InstT, typename... Args> InstT *create(Args &&...args) {
     auto inst = new InstT(std::forward<Args>(args)...);
-    insts.push_back(inst);
+    push_back(inst);
     return inst;
   }
 };
