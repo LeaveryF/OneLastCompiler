@@ -289,6 +289,14 @@ struct AllocaInst : Instruction {
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 
   Type *getAllocatedType() const { return getType()->getPointerEltType(); }
+  int getAllocatedSize() const {
+    if (auto *arrTy = dyn_cast<ArrayType>(getAllocatedType())) {
+      assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+      return 4 * arrTy->getSize();
+    } else {
+      return 4;
+    }
+  }
 };
 
 struct StoreInst : Instruction {

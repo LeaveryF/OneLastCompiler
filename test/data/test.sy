@@ -1,3 +1,7 @@
+//test add
 int main(){
-    return 3;
+    int a, b;
+    a = 10;
+    b = -1;
+    return a + b;
 }

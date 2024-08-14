@@ -69,7 +69,7 @@ struct ArmGen {
 
           for (auto refuse : inst->getUses()) {
             auto &use = *refuse;
-            if (auto *vreg = dyn_cast<VReg>(use)) {
+            if (auto *vreg = dyn_cast_if_present<VReg>(use)) {
               if (regMap.find(vreg) == regMap.end()) {
                 olc_unreachable("Use before def");
               }
@@ -83,6 +83,8 @@ struct ArmGen {
   }
 
   void run() {
+    runRegAlloc();
+
     os << ".text\n";
     for (auto *func : module->funcs) {
       os << ".global " << func->name << "\n";
@@ -97,16 +99,17 @@ struct ArmGen {
       // function prologue
       printArmInstr("push", {"{lr}"});
 
-      // TODO: stack
-      // printArmInstr("sub", {"sp", "sp", 0});
+      assert(curFunc->stackSize < 4096 && "Stack size too large");
+      printArmInstr(
+          "sub", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
 
       for (auto *label : func->labels) {
         // TODO: label name uniquer
         os << "." << label->name << ":\n";
         for (auto *inst : label->insts) {
           if (auto *retInst = dyn_cast<AsmReturnInst>(inst)) {
-            // TODO: stack
-            // printArmInstr("add", {"sp", "sp", 0});
+            printArmInstr(
+                "add", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
 
             printArmInstr("pop", {"{lr}"});
             printArmInstr("bx", {"lr"});
@@ -126,6 +129,8 @@ struct ArmGen {
               if (u.hi > 0)
                 printArmInstr(
                     "movt", {reg_dst->abiName(), std::to_string(u.hi)});
+            } else if (auto *reg = dyn_cast<PReg>(movInst->src)) {
+              printArmInstr("mov", {reg_dst->abiName(), reg->abiName()});
             } else {
               olc_unreachable("NYI");
             }
@@ -150,11 +155,29 @@ struct ArmGen {
             }
             auto reg_dst = cast<PReg>(binInst->dst);
             auto reg_lhs = cast<PReg>(binInst->lhs);
-            auto reg_rhs = cast<PReg>(binInst->rhs);
-            // os << op << "\t" << x->dst << ", " << x->lhs << ", " << x->rhs;
+            if (auto reg_rhs = dyn_cast<PReg>(binInst->rhs)) {
+              // os << op << "\t" << x->dst << ", " << x->lhs << ", " << x->rhs;
+              printArmInstr(
+                  op,
+                  {reg_dst->abiName(), reg_lhs->abiName(), reg_rhs->abiName()});
+            } else {
+              auto imm = cast<AsmImm>(binInst->rhs);
+              assert(imm->hexValue < 4096 && "imm12bit, large imm NYI");
+              printArmInstr(
+                  op, {reg_dst->abiName(), reg_lhs->abiName(), "#" + std::to_string(imm->hexValue)});
+            }
+          } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
+            auto reg_dst = cast<PReg>(ldInst->dst);
+            auto reg_base = cast<PReg>(ldInst->addr);
+            assert(!ldInst->offset && "offset NYI");
             printArmInstr(
-                op,
-                {reg_dst->abiName(), reg_lhs->abiName(), reg_rhs->abiName()});
+                "ldr", {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
+          } else if (auto *stInst = dyn_cast<AsmStoreInst>(inst)) {
+            auto reg_src = cast<PReg>(stInst->src);
+            auto reg_base = cast<PReg>(stInst->addr);
+            assert(!stInst->offset && "offset NYI");
+            printArmInstr(
+                "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
           } else {
             olc_unreachable("NYI");
           }

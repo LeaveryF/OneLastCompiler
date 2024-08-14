@@ -27,15 +27,52 @@ struct CodeGen {
     }
   }
 
-  AsmValue *lowerValue(Value *value) {
+  AsmBinaryInst::Tag convertBinOpTag(BinaryInst::Tag tag) {
+    switch (tag) {
+    case BinaryInst::Tag::Add:
+      return AsmBinaryInst::Add;
+    case BinaryInst::Tag::Sub:
+      return AsmBinaryInst::Sub;
+    case BinaryInst::Tag::Mul:
+      return AsmBinaryInst::Mul;
+    case BinaryInst::Tag::Div:
+      return AsmBinaryInst::Div;
+    case BinaryInst::Tag::Mod:
+      return AsmBinaryInst::Mod;
+    default:
+      olc_unreachable("invalid tag");
+    }
+  }
+
+  AsmImm *lowerImm(int value) {
+    return new AsmImm{static_cast<uint32_t>(value)};
+  }
+
+  AsmValue *lowerValue(Value *value, AsmLabel *label) {
     if (auto *irConst = dyn_cast<ConstantValue>(value)) {
       if (irConst->isInt()) {
-        return new AsmImm{static_cast<uint32_t>(irConst->getInt())};
+        return lowerImm(irConst->getInt());
       } else {
-        olc_unreachable("NYI");
+        olc_unreachable("float NYI");
       }
+    } else if (auto *irGlobal = dyn_cast<GlobalVariable>(value)) {
+      // label->create<LoadGlobalAddr>
+      olc_unreachable("global NYI");
     } else {
       return valueMap.at(value);
+    }
+  }
+
+  AsmReg *lowerValueToReg(Value *value, AsmLabel *label) {
+    auto *asmValue = lowerValue(value, label);
+    if (auto *asmReg = dyn_cast<AsmReg>(asmValue)) {
+      return asmReg;
+    } else {
+      asmReg = AsmReg::makeVReg(convertType(value->getType()));
+      auto *asmMovInst = label->create<AsmMoveInst>();
+      asmMovInst->src = asmValue;
+      asmMovInst->dst = asmReg;
+      return asmReg;
     }
   }
 
@@ -53,19 +90,48 @@ struct CodeGen {
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
               // mov r0 / s0, value
-              auto *asmMovInst = asmLabel->create<AsmMoveInst>();
-              asmMovInst->src = lowerValue(retVal);
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = lowerValue(retVal, asmLabel);
               asmMovInst->dst =
                   AsmReg::makePReg(convertType(retVal->getType()), 0);
+              asmLabel->insts.push_back(asmMovInst);
             }
             asmLabel->create<AsmReturnInst>();
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irBinInst->getType()));
-            auto *asmBinInst = asmLabel->create<AsmBinaryInst>();
-            asmBinInst->lhs = lowerValue(irBinInst->getLHS());
-            asmBinInst->rhs = lowerValue(irBinInst->getRHS());
+            auto *asmBinInst = new AsmBinaryInst{};
+            // TODO: optimize with immediates
+            asmBinInst->tag = convertBinOpTag(irBinInst->tag);
+            asmBinInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
+            asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
             asmBinInst->dst = reg_res;
             valueMap[irBinInst] = reg_res;
+            asmLabel->insts.push_back(asmBinInst);
+          } else if (auto *irAllocaInst = dyn_cast<AllocaInst>(irInst)) {
+            auto *spOffsetInst = new AsmBinaryInst{};
+            spOffsetInst->tag = AsmInst::Add;
+            spOffsetInst->lhs = AsmReg::sp();
+            spOffsetInst->rhs = lowerImm(asmFunc->stackSize);
+            spOffsetInst->dst = AsmReg::makeVReg(AsmType::I32);
+            valueMap[irAllocaInst] = spOffsetInst->dst;
+            asmFunc->stackSize += irAllocaInst->getAllocatedSize();
+            asmLabel->insts.push_back(spOffsetInst);
+          } else if (auto *irLoadInst = dyn_cast<LoadInst>(irInst)) {
+            auto reg_res = AsmReg::makeVReg(convertType(irLoadInst->getType()));
+            auto *asmLoadInst = new AsmLoadInst{};
+            asmLoadInst->addr = lowerValue(irLoadInst->getPointer(), asmLabel);
+            asmLoadInst->dst = reg_res;
+            valueMap[irLoadInst] = reg_res;
+            asmLabel->insts.push_back(asmLoadInst);
+          } else if (auto *irStoreInst = dyn_cast<StoreInst>(irInst)) {
+            auto reg_src = lowerValueToReg(irStoreInst->getValue(), asmLabel);
+            auto *asmStoreInst = new AsmStoreInst{};
+            asmStoreInst->addr =
+                lowerValue(irStoreInst->getPointer(), asmLabel);
+            asmStoreInst->src = reg_src;
+            asmLabel->insts.push_back(asmStoreInst);
+          } else {
+            olc_unreachable("NYI");
           }
         }
       }

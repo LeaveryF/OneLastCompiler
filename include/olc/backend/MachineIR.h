@@ -47,6 +47,10 @@ struct AsmReg : AsmValue {
 
   static VReg *makeVReg(AsmType type);
   static PReg *makePReg(AsmType type, int id);
+
+  static PReg *sp() { return makePReg(AsmType::I32, 13); }
+  static PReg *lr() { return makePReg(AsmType::I32, 14); }
+  static PReg *pc() { return makePReg(AsmType::I32, 15); }
 };
 
 struct VReg : AsmReg {
@@ -94,6 +98,7 @@ struct AsmInst {
     Branch,
     Jump,
     Return,
+    Move,
     Load,
     Store,
     Call,
@@ -201,15 +206,15 @@ struct AsmStoreInst : AsmAccess {
   static bool classof(const AsmInst *v) { return v->tag == Tag::Store; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
-  std::vector<AsmValue **> getUses() override { return {&src}; }
+  std::vector<AsmValue **> getUses() override { return {&src, &addr, &offset}; }
 };
 
 struct AsmMoveInst : AsmInst {
   AsmValue *src = nullptr, *dst = nullptr;
   // TODO: shift
 
-  AsmMoveInst() : AsmInst(AsmInst::Add) {}
-  static bool classof(const AsmInst *v) { return v->tag == Tag::Add; }
+  AsmMoveInst() : AsmInst(AsmInst::Move) {}
+  static bool classof(const AsmInst *v) { return v->tag == Tag::Move; }
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }
   std::vector<AsmValue **> getUses() override { return {&src}; }
@@ -219,6 +224,9 @@ struct AsmFunc {
   std::string name;
   std::list<AsmLabel *> labels;
   bool isBuiltin;
+
+  // other states
+  int stackSize = 0;
 
   AsmFunc(std::string const &name) : name(name) {}
 };
