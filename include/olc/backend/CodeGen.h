@@ -177,6 +177,16 @@ struct CodeGen {
           }
         }
       }
+
+      // Copy preds and succs from IR
+      for (auto *irBB : irFunc->basicBlocks) {
+        auto *asmLabel = labelMap.at(irBB);
+        for (auto *irSucc : irBB->successors)
+          asmLabel->succs.push_back(labelMap.at(irSucc));
+
+        for (auto *irPred : irBB->predecessors)
+          asmLabel->preds.push_back(labelMap.at(irPred));
+      }
     }
   }
 };

@@ -3,6 +3,7 @@
 #include <olc/Support.h>
 
 #include <olc/backend/MachineIR.h>
+#include <olc/backend/RegAlloc.h>
 #include <olc/ir/IR.h>
 
 #include <map>
@@ -35,16 +36,12 @@ struct ArmGen {
   }
 
   void runRegAlloc() {
-    std::map<AsmValue *, AsmValue *> regMap;
-
     for (auto *func : module->funcs) {
-      std::map<AsmType, int> pregCounter;
-      std::map<AsmType, int> pregSize{
-          {AsmType::I32, 13},
-          {AsmType::F32, 32},
-      };
       if (func->isBuiltin)
         continue;
+      LinearScan regAlloc;
+      regAlloc.runOnFunction(func);
+      auto &regMap = regAlloc.regMap;
       for (auto *label : func->labels) {
         for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
           for (auto refdef : inst->getDefs()) {
@@ -53,17 +50,10 @@ struct ArmGen {
             if (auto *preg = dyn_cast<PReg>(def)) {
               continue;
             } else if (auto *vreg = dyn_cast<VReg>(def)) {
-              // allocate preg naively
-              auto type = vreg->type;
-              if (pregCounter[type] >= pregSize[type]) {
-                olc_unreachable("No enough preg");
-              }
-              auto *preg = AsmReg::makePReg(type, pregCounter[type]++);
-              regMap[vreg] = preg;
-              // update MachineIR
-              def = preg;
+              assert(regMap.count(vreg) && "Spill detected, NYI");
+              def = regMap.at(vreg);
             } else {
-              olc_unreachable("???");
+              olc_unreachable("Invalid asm reg for def");
             }
           }
 
@@ -71,10 +61,9 @@ struct ArmGen {
             auto &use = *refuse;
             if (auto *vreg = dyn_cast_if_present<VReg>(use)) {
               if (regMap.find(vreg) == regMap.end()) {
-                olc_unreachable("Use before def");
+                olc_unreachable("Spill detected, NYI");
               }
-              // update MachineIR
-              use = regMap[vreg];
+              use = regMap.at(vreg);
             }
           }
         }

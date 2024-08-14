@@ -6,90 +6,76 @@
 namespace olc {
 
 // Calc basic block liveness
-LivenessBlockInfo::LivenessBlockInfo(BasicBlock *block) : block(block) {
-  auto gatherOutValues = [&](Value *inst) {
-    for (auto &&[user, idx] : inst->uses) {
-      // is it always instruction?
-      auto instUser = cast<Instruction>(user);
-      if (instUser->parent != block) {
-        outValues.insert(inst);
-        break;
-      }
-    }
-  };
-
-  for (auto inst : block->instructions) {
-    gatherOutValues(inst);
-    if (inst->isDefVar())
-      defValues.insert(inst);
-    for (auto &&op : inst->operands) {
-      if (op->isDefVar())
-        useValues.insert(op);
-    }
+LivenessBlockInfo::LivenessBlockInfo(AsmLabel *label) : label(label) {
+  for (auto inst = label->Head; inst; inst = inst->Next) {
+    for (auto *refuse : inst->getUses())
+      if (auto *reg = dyn_cast_if_present<AsmReg>(*refuse))
+        if (!defRegs.count(reg))
+          useRegs.insert(reg);
+    for (auto *refdef : inst->getDefs())
+      if (auto *reg = cast<AsmReg>(*refdef))
+        defRegs.insert(reg);
   }
-
-  set_subtract(useValues, defValues);
 }
 
 // in = use U out \ def
 bool LivenessBlockInfo::updateLiveIn() {
-  ValueSetT newInValues = useValues;
-  set_union(newInValues, outValues);
-  set_subtract(newInValues, defValues);
-  bool changed = newInValues.size() != inValues.size();
-  inValues = std::move(newInValues);
+  VarSetT newInValues = useRegs;
+  set_union(newInValues, outRegs);
+  set_subtract(newInValues, defRegs);
+  bool changed = newInValues.size() != inRegs.size();
+  inRegs = std::move(newInValues);
   return changed;
 }
 
 // out = U_{succ} in_{succ}
 void LivenessBlockInfo::updateLiveOut(BlockBuilderMapT const &infoMap) {
-  for (auto succ : block->successors) {
-    set_union(outValues, infoMap.at(succ).inValues);
+  for (auto succ : label->succs) {
+    set_union(outRegs, infoMap.at(succ).inRegs);
   }
 }
 
-void InstOrderingManager::runOnFunction(Function *func) {
-  std::stack<BasicBlock *> worklist;
-  std::map<BasicBlock *, bool> visited;
-  worklist.push(func->getEntryBlock());
+void InstOrderingManager::runOnFunction(AsmFunc *func) {
+  std::stack<AsmLabel *> worklist;
+  std::map<AsmLabel *, bool> visited;
+  worklist.push(func->labels.front());
   while (!worklist.empty()) {
-    BasicBlock *block = worklist.top();
+    AsmLabel *block = worklist.top();
     worklist.pop();
     if (visited[block])
       continue;
     visited[block] = true;
     runOnBlock(block);
-    for (auto succ : block->successors) {
+    for (auto succ : block->succs) {
       worklist.push(succ);
     }
   }
 }
 
-void InstOrderingManager::runOnBlock(BasicBlock *block) {
-  blockOrder.push_back(block);
+void InstOrderingManager::runOnBlock(AsmLabel *label) {
+  labelOrder.push_back(label);
 
-  for (auto inst : block->instructions) {
+  for (auto inst = label->Head; inst; inst = inst->Next) {
     auto count = instIDMap.size();
     instIDMap[inst] = 2 * count;
-    idValueMap[count] = inst;
   }
 }
 
-void LivenessAnalysis::runOnFunction(Function *func) {
+void LivenessAnalysis::runOnFunction(AsmFunc *func) {
   instOrdering.runOnFunction(func);
   this->func = func;
   buildBlockInfoMap();
-  calcLiveIntervals();
+  calcLiveness();
 }
 
 void LivenessAnalysis::buildBlockInfoMap() {
-  std::vector<BasicBlock *> worklist;
-  std::map<BasicBlock *, bool> present;
+  std::vector<AsmLabel *> worklist;
+  std::map<AsmLabel *, bool> present;
 
-  for (auto block : instOrdering.blockOrder) {
+  for (auto block : instOrdering.labelOrder) {
     auto &blockInfo = blockInfoMap.try_emplace(block, block).first->second;
     if (blockInfo.updateLiveIn()) {
-      for (auto pred : block->predecessors) {
+      for (auto pred : block->preds) {
         if (!present[pred]) {
           worklist.push_back(pred);
           present[pred] = true;
@@ -105,7 +91,7 @@ void LivenessAnalysis::buildBlockInfoMap() {
     auto &blockInfo = blockInfoMap.at(block);
     blockInfo.updateLiveOut(blockInfoMap);
     if (blockInfo.updateLiveIn()) {
-      for (auto pred : block->predecessors) {
+      for (auto pred : block->preds) {
         if (!present[pred]) {
           worklist.push_back(pred);
           present[pred] = true;
@@ -115,45 +101,52 @@ void LivenessAnalysis::buildBlockInfoMap() {
   }
 }
 
-void LivenessAnalysis::calcLiveIntervals() {
-  auto inPoint = [&](Instruction *inst) {
-    return instOrdering.instIDMap.at(inst);
-  };
-  auto outPoint = [&](Instruction *inst) {
+void LivenessAnalysis::calcLiveness() {
+  auto inPoint = [&](AsmInst *inst) { return instOrdering.instIDMap.at(inst); };
+  auto outPoint = [&](AsmInst *inst) {
     return instOrdering.instIDMap.at(inst) + 1;
   };
 
-  // Handle arguments
-  for (auto *arg : func->args) {
-    updateInterval(arg, 0);
-  }
+  // TODO: Handle arguments
 
-  for (auto blockIt = instOrdering.blockOrder.rbegin();
-       blockIt != instOrdering.blockOrder.rend(); ++blockIt) {
-    auto block = *blockIt;
-    auto &blockInfo = blockInfoMap.at(block);
-    const auto beginID = inPoint(block->instructions.front());
-    const auto endID = inPoint(block->instructions.back());
+  liveness.resize(instOrdering.instIDMap.size() * 2);
 
-    for (auto *var : blockInfo.outValues) {
-      updateInterval(var, beginID);
-      updateInterval(var, endID);
-    }
+  bool changed = false;
+  do {
+    changed = false;
+    for (auto blockIt = instOrdering.labelOrder.rbegin();
+         blockIt != instOrdering.labelOrder.rend(); ++blockIt) {
+      auto block = *blockIt;
+      auto &blockInfo = blockInfoMap.at(block);
 
-    for (auto *inst : block->instructions) {
-      assert(!inst->isPHI() && "NYI");
+      for (auto *inst = block->Tail; inst; inst = inst->Prev) {
+        auto &inset = liveness.at(inPoint(inst));
+        auto &outset = liveness.at(outPoint(inst));
 
-      // def
-      if (inst->isDefVar())
-        updateInterval(inst, outPoint(inst));
+        if (inst != block->Tail) {
+          auto &nextIn = liveness.at(inPoint(inst->Next));
+          set_union(outset, nextIn);
+        }
 
-      // use
-      for (auto &&op : inst->operands) {
-        if (op->isDefVar())
-          updateInterval(op, inPoint(inst));
+        auto newInset = outset;
+
+        // def
+        for (auto *refdef : inst->getDefs())
+          if (auto *var = cast<AsmReg>(*refdef))
+            newInset.erase(var);
+
+        // use
+        for (auto *refuse : inst->getUses())
+          if (auto *var = dyn_cast_if_present<AsmReg>(*refuse))
+            newInset.insert(var);
+
+        if (newInset != inset) {
+          changed = true;
+          inset = std::move(newInset);
+        }
       }
     }
-  }
+  } while (changed);
 }
 
 } // namespace olc
