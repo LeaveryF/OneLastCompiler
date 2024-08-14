@@ -4,9 +4,9 @@
 #include <olc/ir/IR.h>
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
 
 namespace olc {
 
@@ -40,7 +40,8 @@ struct VReg;
 
 struct AsmReg : AsmValue {
   AsmType type;
-  AsmReg(Tag tag, AsmType type) : AsmValue(tag), type(type) {}
+  int id;
+  AsmReg(Tag tag, AsmType type, int id) : AsmValue(tag), type(type), id(id) {}
 
   static bool classof(const AsmValue *v) {
     return v->tag == Tag::VReg || v->tag == Tag::PReg;
@@ -55,18 +56,13 @@ struct AsmReg : AsmValue {
 };
 
 struct VReg : AsmReg {
-  int id;
-
-  VReg(AsmType type, int id) : AsmReg(Tag::VReg, type), id(id) {}
+  VReg(AsmType type, int id) : AsmReg(Tag::VReg, type, id) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::VReg; }
 };
 
 struct PReg : AsmReg {
-  int id;
-
-  // PReg() : AsmReg(Tag::PReg, AsmType::I32), id(0) {}
-  PReg(AsmType type, int id) : AsmReg(Tag::PReg, type), id(id) {}
+  PReg(AsmType type, int id) : AsmReg(Tag::PReg, type, id) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::PReg; }
 

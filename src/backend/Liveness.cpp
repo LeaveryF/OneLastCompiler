@@ -126,6 +126,8 @@ void LivenessAnalysis::calcLiveness() {
         if (inst != block->Tail) {
           auto &nextIn = liveness.at(inPoint(inst->Next));
           set_union(outset, nextIn);
+        } else {
+          outset = blockInfo.outRegs;
         }
 
         auto newInset = outset;
