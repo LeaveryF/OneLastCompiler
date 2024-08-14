@@ -156,21 +156,21 @@ struct CodeGen {
                 // 栈传参
                 olc_unreachable("NYI");
               }
-              // bl fname
-              auto *asmCallInst =
-                  new AsmCallInst{irCallInst->getCallee()->fnName};
-              asmLabel->push_back(asmCallInst);
-              // 返回值
-              if (!irCallInst->getType()->isVoidTy()) {
-                // mov value, r0 / s0
-                valueMap[irCallInst] =
-                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
-                auto *asmMovInst = new AsmMoveInst{};
-                asmMovInst->src =
-                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
-                asmMovInst->dst = lowerValue(irCallInst, asmLabel);
-                asmLabel->push_back(asmMovInst);
-              }
+            }
+            // bl fname
+            auto *asmCallInst =
+                new AsmCallInst{irCallInst->getCallee()->fnName};
+            asmLabel->push_back(asmCallInst);
+            // 返回值
+            if (!irCallInst->getType()->isVoidTy()) {
+              // mov value, r0 / s0
+              valueMap[irCallInst] =
+                  AsmReg::makePReg(convertType(irCallInst->getType()), 0);
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src =
+                  AsmReg::makePReg(convertType(irCallInst->getType()), 0);
+              asmMovInst->dst = lowerValue(irCallInst, asmLabel);
+              asmLabel->push_back(asmMovInst);
             }
           } else {
             olc_unreachable("NYI");
