@@ -154,6 +154,10 @@ struct CodeGen {
         auto asmLabel = new AsmLabel{irBB->label};
         labelMap[irBB] = asmLabel;
         asmFunc->labels.push_back(asmLabel);
+      }
+
+      for (auto *irBB : irFunc->basicBlocks) {
+        auto asmLabel = labelMap.at(irBB);
         for (auto *irInst : irBB->instructions) {
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
@@ -167,14 +171,26 @@ struct CodeGen {
             asmLabel->push_back(new AsmReturnInst);
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irBinInst->getType()));
-            auto *asmBinInst =
-                new AsmBinaryInst{convertBinOpTag(irBinInst->tag)};
-            // TODO: optimize with immediates
-            asmBinInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
-            asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
-            asmBinInst->dst = reg_res;
-            valueMap[irBinInst] = reg_res;
-            asmLabel->push_back(asmBinInst);
+            auto opTag = convertBinOpTag(irBinInst->tag);
+            if (opTag == AsmBinaryInst::Tag::Cmp) {
+              auto *asmCmpInst = new AsmCompareInst{};
+              asmCmpInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
+              asmCmpInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
+              asmLabel->push_back(asmCmpInst);
+              bool allUseIsBr = std::all_of(
+                  irBinInst->uses.begin(), irBinInst->uses.end(),
+                  [&](Use const &use) { return isa<BranchInst>(use.user); });
+              assert(
+                  allUseIsBr && "NYI, Cmp result can only be used by branch");
+            } else {
+              auto *asmBinInst = new AsmBinaryInst{opTag};
+              // TODO: optimize with immediates
+              asmBinInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
+              asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
+              asmBinInst->dst = reg_res;
+              valueMap[irBinInst] = reg_res;
+              asmLabel->push_back(asmBinInst);
+            }
           } else if (auto *irAllocaInst = dyn_cast<AllocaInst>(irInst)) {
             auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
             spOffsetInst->lhs = AsmReg::sp();
@@ -241,13 +257,14 @@ struct CodeGen {
             auto *branchInst = new AsmBranchInst{};
             auto *cond = dyn_cast<BinaryInst>(irBranchInst->getCondition());
             branchInst->pred = getAsmPred(cond->tag);
-            branchInst->trueTarget = new AsmLabel{irBranchInst->getTrueBlock()->label};
-            branchInst->falseTarget = new AsmLabel{irBranchInst->getFalseBlock()->label};
+            branchInst->trueTarget = labelMap.at(irBranchInst->getTrueBlock());
+            branchInst->falseTarget =
+                labelMap.at(irBranchInst->getFalseBlock());
             asmLabel->push_back(branchInst);
           } else if (auto *irJumpInst = dyn_cast<JumpInst>(irInst)) {
             // 处理无条件跳转指令
             auto *jumpInst = new AsmJumpInst{nullptr};
-            jumpInst->target = new AsmLabel{irJumpInst->getTargetBlock()->label};
+            jumpInst->target = labelMap.at(irJumpInst->getTargetBlock());
             asmLabel->push_back(jumpInst);
           } else {
             olc_unreachable("NYI");

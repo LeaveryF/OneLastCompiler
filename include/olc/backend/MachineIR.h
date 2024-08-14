@@ -124,7 +124,9 @@ struct AsmLabel : IList<AsmInst> {
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
 
-  AsmBinaryInst(Tag tag) : AsmInst(tag) {}
+  AsmBinaryInst(Tag tag) : AsmInst(tag) {
+    assert(tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul || tag == Tag::Div || tag == Tag::Mod);
+  }
   static bool classof(const AsmInst *v) {
     return v->tag == Tag::Add || v->tag == Tag::Sub || v->tag == Tag::Mul ||
            v->tag == Tag::Div || v->tag == Tag::Mod;

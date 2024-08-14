@@ -220,11 +220,11 @@ struct ArmGen {
             if (brInst->pred != AsmPredicate::Al) {
               // 处理条件分支
               std::string condTag = getCondStr(brInst->pred);
-              printArmInstr("b" + condTag, {"." + brInst->trueTarget->name});
-              printArmInstr("b", {"." + brInst->falseTarget->name});
+              printArmInstr("b" + condTag, {getLabel(brInst->trueTarget)});
+              printArmInstr("b", {getLabel(brInst->falseTarget)});
             } else {
               // 处理无条件跳转
-              printArmInstr("b", {"." + brInst->trueTarget->name});
+              printArmInstr("b", {getLabel(brInst->trueTarget)});
             }
           } else if (auto *cmpInst = dyn_cast<AsmCompareInst>(inst)) {
             // 处理比较指令
@@ -233,9 +233,8 @@ struct ArmGen {
             printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
           } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
             // 处理无条件跳转指令
-            printArmInstr("b", {"." + jmpInst->target->name});
-          }
-          else {
+            printArmInstr("b", {getLabel(jmpInst->target)});
+          } else {
             olc_unreachable("NYI");
           }
         }
