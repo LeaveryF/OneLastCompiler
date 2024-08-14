@@ -7,7 +7,8 @@
 
 namespace olc {
 
-[[noreturn]] inline void unreachable(const char *file, int line, const char *msg) {
+[[noreturn]] inline void
+unreachable(const char *file, int line, const char *msg) {
 #ifndef NDEBUG
   std::fprintf(stderr, "%s:%d: unreachable: %s\n", file, line, msg);
 #endif
@@ -75,53 +76,53 @@ template <typename From> struct simplify_type<const From> {
 //===----------------------------------------------------------------------===//
 // isa_impl
 //===----------------------------------------------------------------------===//
- 
+
 // The core of the implementation of isa<X> is here; To and From should be
 // the names of classes.  This template can be specialized to customize the
 // implementation of isa<> without rewriting it from scratch.
 template <typename To, typename From, typename Enabler = void> struct isa_impl {
   static inline bool doit(const From &Val) { return To::classof(&Val); }
 };
- 
+
 // Always allow upcasts, and perform no dynamic check for them.
 template <typename To, typename From>
 struct isa_impl<To, From, std::enable_if_t<std::is_base_of_v<To, From>>> {
   static inline bool doit(const From &) { return true; }
 };
- 
+
 template <typename To, typename From> struct isa_impl_cl {
   static inline bool doit(const From &Val) {
     return isa_impl<To, From>::doit(Val);
   }
 };
- 
+
 template <typename To, typename From> struct isa_impl_cl<To, const From> {
   static inline bool doit(const From &Val) {
     return isa_impl<To, From>::doit(Val);
   }
 };
- 
+
 template <typename To, typename From> struct isa_impl_cl<To, From *> {
   static inline bool doit(const From *Val) {
     assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
- 
+
 template <typename To, typename From> struct isa_impl_cl<To, From *const> {
   static inline bool doit(const From *Val) {
     assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
- 
+
 template <typename To, typename From> struct isa_impl_cl<To, const From *> {
   static inline bool doit(const From *Val) {
     assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
- 
+
 template <typename To, typename From>
 struct isa_impl_cl<To, const From *const> {
   static inline bool doit(const From *Val) {
@@ -129,18 +130,18 @@ struct isa_impl_cl<To, const From *const> {
     return isa_impl<To, From>::doit(*Val);
   }
 };
- 
+
 template <typename To, typename From, typename SimpleFrom>
 struct isa_impl_wrap {
   // When From != SimplifiedType, we can simplify the type some more by using
   // the simplify_type template.
   static bool doit(const From &Val) {
-    return isa_impl_wrap<To, SimpleFrom,
-                         typename simplify_type<SimpleFrom>::SimpleType>::
+    return isa_impl_wrap<
+        To, SimpleFrom, typename simplify_type<SimpleFrom>::SimpleType>::
         doit(simplify_type<const From>::getSimplifiedValue(Val));
   }
 };
- 
+
 template <typename To, typename FromTy>
 struct isa_impl_wrap<To, FromTy, FromTy> {
   // When From == SimpleType, we are as simple as we are going to get.
@@ -321,7 +322,6 @@ struct ValueFromPointerCast
           detail::SelfType<Derived, ValueFromPointerCast<To, From>>> {
   static inline To doCast(From *f) { return To(f); }
 };
-
 
 /// Provides a cast trait that strips `const` from types to make it easier to
 /// implement a const-version of a non-const cast. It just removes boilerplate
@@ -723,15 +723,13 @@ template <typename T> void hash_combine(std::size_t &seed, T const &v) {
   seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
-
 /// set_union(A, B) - Compute A := A u B, return whether A changed.
 ///
-template <class S1Ty, class S2Ty>
-bool set_union(S1Ty &S1, const S2Ty &S2) {
+template <class S1Ty, class S2Ty> bool set_union(S1Ty &S1, const S2Ty &S2) {
   bool Changed = false;
 
-  for (typename S2Ty::const_iterator SI = S2.begin(), SE = S2.end();
-       SI != SE; ++SI)
+  for (typename S2Ty::const_iterator SI = S2.begin(), SE = S2.end(); SI != SE;
+       ++SI)
     if (S1.insert(*SI).second)
       Changed = true;
 
@@ -743,32 +741,32 @@ bool set_union(S1Ty &S1, const S2Ty &S2) {
 /// is nicer to use.  Functionally, this iterates through S1, removing
 /// elements that are not contained in S2.
 ///
-template <class S1Ty, class S2Ty>
-void set_intersect(S1Ty &S1, const S2Ty &S2) {
-   for (typename S1Ty::iterator I = S1.begin(); I != S1.end();) {
-     const auto &E = *I;
-     ++I;
-     if (!S2.count(E)) S1.erase(E);   // Erase element if not in S2
-   }
+template <class S1Ty, class S2Ty> void set_intersect(S1Ty &S1, const S2Ty &S2) {
+  for (typename S1Ty::iterator I = S1.begin(); I != S1.end();) {
+    const auto &E = *I;
+    ++I;
+    if (!S2.count(E))
+      S1.erase(E); // Erase element if not in S2
+  }
 }
 
 template <class S1Ty, class S2Ty>
 S1Ty set_intersection_impl(const S1Ty &S1, const S2Ty &S2) {
-   S1Ty Result;
-   for (typename S1Ty::const_iterator SI = S1.begin(), SE = S1.end(); SI != SE;
-        ++SI)
-     if (S2.count(*SI))
+  S1Ty Result;
+  for (typename S1Ty::const_iterator SI = S1.begin(), SE = S1.end(); SI != SE;
+       ++SI)
+    if (S2.count(*SI))
       Result.insert(*SI);
-   return Result;
+  return Result;
 }
 
 /// set_intersection(A, B) - Return A ^ B
 template <class S1Ty, class S2Ty>
 S1Ty set_intersection(const S1Ty &S1, const S2Ty &S2) {
-   if (S1.size() < S2.size())
-     return set_intersection_impl(S1, S2);
-   else
-     return set_intersection_impl(S2, S1);
+  if (S1.size() < S2.size())
+    return set_intersection_impl(S1, S2);
+  else
+    return set_intersection_impl(S2, S1);
 }
 
 /// set_difference(A, B) - Return A - B
@@ -776,19 +774,18 @@ S1Ty set_intersection(const S1Ty &S1, const S2Ty &S2) {
 template <class S1Ty, class S2Ty>
 S1Ty set_difference(const S1Ty &S1, const S2Ty &S2) {
   S1Ty Result;
-  for (typename S1Ty::const_iterator SI = S1.begin(), SE = S1.end();
-       SI != SE; ++SI)
-    if (!S2.count(*SI))       // if the element is not in set2
+  for (typename S1Ty::const_iterator SI = S1.begin(), SE = S1.end(); SI != SE;
+       ++SI)
+    if (!S2.count(*SI)) // if the element is not in set2
       Result.insert(*SI);
   return Result;
 }
 
 /// set_subtract(A, B) - Compute A := A - B
 ///
-template <class S1Ty, class S2Ty>
-void set_subtract(S1Ty &S1, const S2Ty &S2) {
-  for (typename S2Ty::const_iterator SI = S2.begin(), SE = S2.end();
-       SI != SE; ++SI)
+template <class S1Ty, class S2Ty> void set_subtract(S1Ty &S1, const S2Ty &S2) {
+  for (typename S2Ty::const_iterator SI = S2.begin(), SE = S2.end(); SI != SE;
+       ++SI)
     S1.erase(*SI);
 }
 
@@ -817,18 +814,26 @@ bool set_is_subset(const S1Ty &S1, const S2Ty &S2) {
   return true;
 }
 
-template <class T>
-struct IListNode {
+template <class INode> struct IList;
+
+template <class T> struct IListNode {
   T *Next = nullptr;
   T *Prev = nullptr;
+  IList<T> *Owner = nullptr;
+
+  void insert_before(IListNode *Node) { Owner->push_before(Node, this); }
+
+  void insert_after(IListNode *Node) { Owner->push_after(Node, this); }
+
+  void remove() { Owner->remove(this); }
 };
 
-template <class INode>
-struct IList {
+template <class INode> struct IList {
   INode *Head = nullptr;
   INode *Tail = nullptr;
 
   void push_back(INode *Node) {
+    Node->Owner = this;
     if (Tail) {
       Tail->Next = Node;
       Node->Prev = Tail;
@@ -839,6 +844,7 @@ struct IList {
   }
 
   void push_front(INode *Node) {
+    Node->Owner = this;
     if (Head) {
       Head->Prev = Node;
       Node->Next = Head;
@@ -849,6 +855,7 @@ struct IList {
   }
 
   void push_before(INode *Before, INode *Node) {
+    Node->Owner = this;
     if (Before->Prev) {
       Before->Prev->Next = Node;
       Node->Prev = Before->Prev;
@@ -860,6 +867,7 @@ struct IList {
   }
 
   void push_after(INode *After, INode *Node) {
+    Node->Owner = this;
     if (After->Next) {
       After->Next->Prev = Node;
       Node->Next = After->Next;
@@ -871,6 +879,7 @@ struct IList {
   }
 
   void remove(INode *Node) {
+    Node->Owner = nullptr;
     if (Node->Prev)
       Node->Prev->Next = Node->Next;
     else
@@ -884,9 +893,7 @@ struct IList {
 
   bool empty() const { return Head == nullptr; }
 
-  void clear() {
-    Head = Tail = nullptr;
-  }
+  void clear() { Head = Tail = nullptr; }
 };
 
 } // namespace olc
