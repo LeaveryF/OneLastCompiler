@@ -15,6 +15,7 @@ struct ArmGen {
   std::ostream &os;
   AsmModule *module = nullptr;
   AsmFunc *curFunc = nullptr;
+  std::unordered_map<AsmLabel *, int> labelMap;
 
   ArmGen(std::ostream &os, AsmModule *module) : os(os), module(module) {}
 
@@ -54,6 +55,13 @@ struct ArmGen {
       os << operands[i];
     }
     os << '\n';
+  }
+
+  std::string getLabel(AsmLabel *label) {
+    if (labelMap.find(label) == labelMap.end()) {
+      labelMap[label] = labelMap.size();
+    }
+    return "." + label->name + "_" + std::to_string(labelMap[label]);
   }
 
   void runRegAlloc() {
@@ -114,8 +122,7 @@ struct ArmGen {
           "sub", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
 
       for (auto *label : func->labels) {
-        // TODO: label name uniquer
-        os << "." << label->name << ":\n";
+        os << getLabel(label) << ":\n";
         for (auto *inst = label->Head; inst; inst = inst->Next) {
           if (auto *retInst = dyn_cast<AsmReturnInst>(inst)) {
             printArmInstr(
