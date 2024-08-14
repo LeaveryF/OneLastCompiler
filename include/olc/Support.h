@@ -817,4 +817,76 @@ bool set_is_subset(const S1Ty &S1, const S2Ty &S2) {
   return true;
 }
 
+template <class T>
+struct IListNode {
+  T *Next = nullptr;
+  T *Prev = nullptr;
+};
+
+template <class INode>
+struct IList {
+  INode *Head = nullptr;
+  INode *Tail = nullptr;
+
+  void push_back(INode *Node) {
+    if (Tail) {
+      Tail->Next = Node;
+      Node->Prev = Tail;
+      Tail = Node;
+    } else {
+      Head = Tail = Node;
+    }
+  }
+
+  void push_front(INode *Node) {
+    if (Head) {
+      Head->Prev = Node;
+      Node->Next = Head;
+      Head = Node;
+    } else {
+      Head = Tail = Node;
+    }
+  }
+
+  void push_before(INode *Before, INode *Node) {
+    if (Before->Prev) {
+      Before->Prev->Next = Node;
+      Node->Prev = Before->Prev;
+    } else {
+      Head = Node;
+    }
+    Node->Next = Before;
+    Before->Prev = Node;
+  }
+
+  void push_after(INode *After, INode *Node) {
+    if (After->Next) {
+      After->Next->Prev = Node;
+      Node->Next = After->Next;
+    } else {
+      Tail = Node;
+    }
+    Node->Prev = After;
+    After->Next = Node;
+  }
+
+  void remove(INode *Node) {
+    if (Node->Prev)
+      Node->Prev->Next = Node->Next;
+    else
+      Head = Node->Next;
+
+    if (Node->Next)
+      Node->Next->Prev = Node->Prev;
+    else
+      Tail = Node->Prev;
+  }
+
+  bool empty() const { return Head == nullptr; }
+
+  void clear() {
+    Head = Tail = nullptr;
+  }
+};
+
 } // namespace olc
