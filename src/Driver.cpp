@@ -17,6 +17,7 @@
 #include <olc/backend/ArmWriter.h>
 #include <olc/backend/CodeGen.h>
 #include <olc/backend/Liveness.h>
+#include <olc/backend/RegAlloc.h>
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
@@ -78,12 +79,8 @@ int main(int argc, const char *argv[]) {
 
   asmWriter.printModule(mod);
 
-  std::stringstream ss;
-  ArmWriter armWriter{ss};
+  ArmWriter armWriter{std::cerr};
   armWriter.printModule(mod);
-
-  std::cout << ss.str();
-  std::cerr << ss.str();
 
   std::cerr << "============\n";
 
@@ -91,13 +88,19 @@ int main(int argc, const char *argv[]) {
   codegen.run();
   auto *asmMod = codegen.asmModule;
 
-  ArmGen armgen{std::cerr, asmMod};
+  std::stringstream ss;
+  ArmGen armgen{ss, asmMod};
   armgen.run();
 
+  std::cerr << ss.str();
+  std::cout << ss.str();
   std::cerr << "============\n";
 
   // LivenessAnalysis liveness;
-  // liveness.runOnFunction(mod->getFunction("main"));
+  // liveness.runOnFunction(asmMod->getFunction("main"));
+
+  // LinearScan regAlloc{};
+  // regAlloc.runOnFunction(asmMod->getFunction("main"));
 
   // auto getValName = [&](Value *val) {
   //   assert(val->isDefVar() && "Value is not a variable");

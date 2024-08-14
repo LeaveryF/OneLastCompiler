@@ -115,6 +115,7 @@ struct AsmInst : IListNode<AsmInst> {
 struct AsmLabel : IList<AsmInst> {
   std::string name;
   // other informations
+  std::vector<AsmLabel *> preds, succs;
 
   AsmLabel(std::string name) : name(name) {}
 };
@@ -228,6 +229,15 @@ struct AsmModule {
   std::list<AsmFunc *> funcs;
   // Uses IR constructs to pass through
   std::list<GlobalVariable *> globals;
+
+  AsmFunc *getFunction(std::string const &name) const {
+    for (auto *func : funcs) {
+      if (func->name == name) {
+        return func;
+      }
+    }
+    return nullptr;
+  }
 };
 
 } // namespace olc
