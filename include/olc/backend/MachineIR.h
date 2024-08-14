@@ -88,7 +88,7 @@ struct AsmImm : AsmValue {
 };
 
 struct AsmInst : IListNode<AsmInst> {
-  enum Tag {
+  enum class Tag {
     Add,
     Sub,
     Mul,
@@ -122,7 +122,7 @@ struct AsmLabel : IList<AsmInst> {
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
 
-  AsmBinaryInst() : AsmInst(tag) {}
+  AsmBinaryInst(Tag tag) : AsmInst(tag) {}
   static bool classof(const AsmInst *v) {
     return v->tag == Tag::Add || v->tag == Tag::Sub || v->tag == Tag::Mul ||
            v->tag == Tag::Div || v->tag == Tag::Mod;
@@ -146,7 +146,7 @@ struct AsmBranchInst : AsmInst {
   AsmPredicate pred = AsmPredicate::Al;
   AsmLabel *target = nullptr;
 
-  AsmBranchInst() : AsmInst(AsmInst::Branch) {}
+  AsmBranchInst() : AsmInst(Tag::Branch) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Branch; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
@@ -156,7 +156,7 @@ struct AsmBranchInst : AsmInst {
 struct AsmJumpInst : AsmInst {
   AsmLabel *target = nullptr;
 
-  AsmJumpInst(AsmLabel *target) : AsmInst(AsmInst::Jump) {}
+  AsmJumpInst(AsmLabel *target) : AsmInst(Tag::Jump) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Jump; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
@@ -164,7 +164,7 @@ struct AsmJumpInst : AsmInst {
 };
 
 struct AsmReturnInst : AsmInst {
-  AsmReturnInst() : AsmInst(AsmInst::Return) {}
+  AsmReturnInst() : AsmInst(Tag::Return) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Return; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
@@ -185,7 +185,7 @@ struct AsmAccess : AsmInst {
 struct AsmLoadInst : AsmAccess {
   AsmValue *dst = nullptr;
 
-  AsmLoadInst() : AsmAccess(AsmInst::Load) {}
+  AsmLoadInst() : AsmAccess(Tag::Load) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Load; }
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }
@@ -195,7 +195,7 @@ struct AsmLoadInst : AsmAccess {
 struct AsmStoreInst : AsmAccess {
   AsmValue *src = nullptr;
 
-  AsmStoreInst() : AsmAccess(AsmInst::Store) {}
+  AsmStoreInst() : AsmAccess(Tag::Store) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Store; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
@@ -206,7 +206,7 @@ struct AsmMoveInst : AsmInst {
   AsmValue *src = nullptr, *dst = nullptr;
   // TODO: shift
 
-  AsmMoveInst() : AsmInst(AsmInst::Move) {}
+  AsmMoveInst() : AsmInst(Tag::Move) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Move; }
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }

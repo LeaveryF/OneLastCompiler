@@ -30,15 +30,15 @@ struct CodeGen {
   AsmBinaryInst::Tag convertBinOpTag(BinaryInst::Tag tag) {
     switch (tag) {
     case BinaryInst::Tag::Add:
-      return AsmBinaryInst::Add;
+      return AsmBinaryInst::Tag::Add;
     case BinaryInst::Tag::Sub:
-      return AsmBinaryInst::Sub;
+      return AsmBinaryInst::Tag::Sub;
     case BinaryInst::Tag::Mul:
-      return AsmBinaryInst::Mul;
+      return AsmBinaryInst::Tag::Mul;
     case BinaryInst::Tag::Div:
-      return AsmBinaryInst::Div;
+      return AsmBinaryInst::Tag::Div;
     case BinaryInst::Tag::Mod:
-      return AsmBinaryInst::Mod;
+      return AsmBinaryInst::Tag::Mod;
     default:
       olc_unreachable("invalid tag");
     }
@@ -100,17 +100,16 @@ struct CodeGen {
             asmLabel->push_back(new AsmReturnInst);
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irBinInst->getType()));
-            auto *asmBinInst = new AsmBinaryInst{};
+            auto *asmBinInst =
+                new AsmBinaryInst{convertBinOpTag(irBinInst->tag)};
             // TODO: optimize with immediates
-            asmBinInst->tag = convertBinOpTag(irBinInst->tag);
             asmBinInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
             asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
             asmBinInst->dst = reg_res;
             valueMap[irBinInst] = reg_res;
             asmLabel->push_back(asmBinInst);
           } else if (auto *irAllocaInst = dyn_cast<AllocaInst>(irInst)) {
-            auto *spOffsetInst = new AsmBinaryInst{};
-            spOffsetInst->tag = AsmInst::Add;
+            auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
             spOffsetInst->lhs = AsmReg::sp();
             spOffsetInst->rhs = lowerImm(asmFunc->stackSize);
             spOffsetInst->dst = AsmReg::makeVReg(AsmType::I32);

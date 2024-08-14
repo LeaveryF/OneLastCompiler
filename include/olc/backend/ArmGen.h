@@ -137,17 +137,17 @@ struct ArmGen {
           } else if (auto *binInst = dyn_cast<AsmBinaryInst>(inst)) {
             std::string op;
             switch (binInst->tag) {
-            case AsmInst::Add:
+            case AsmInst::Tag::Add:
               op = "add";
               break;
-            case AsmInst::Sub:
+            case AsmInst::Tag::Sub:
               op = "sub";
               break;
-            case AsmInst::Mul:
+            case AsmInst::Tag::Mul:
               op = "mul";
               break;
-            case AsmInst::Div:
-            case AsmInst::Mod:
+            case AsmInst::Tag::Div:
+            case AsmInst::Tag::Mod:
               olc_unreachable("NYI");
               break;
             default:
