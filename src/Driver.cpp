@@ -13,7 +13,9 @@
 #include <sysy2022Parser.h>
 #include <sysy2022Visitor.h>
 
+#include <olc/backend/ArmGen.h>
 #include <olc/backend/ArmWriter.h>
+#include <olc/backend/CodeGen.h>
 #include <olc/backend/Liveness.h>
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
@@ -82,6 +84,16 @@ int main(int argc, const char *argv[]) {
 
   std::cout << ss.str();
   std::cerr << ss.str();
+
+  std::cerr << "============\n";
+
+  CodeGen codegen{mod};
+  codegen.run();
+  auto *asmMod = codegen.asmModule;
+
+  ArmGen armgen{std::cerr, asmMod};
+  armgen.run();
+
   std::cerr << "============\n";
 
   // LivenessAnalysis liveness;
