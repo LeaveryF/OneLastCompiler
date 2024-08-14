@@ -136,15 +136,34 @@ struct ArmGen {
               op = "mul";
               break;
             case AsmInst::Tag::Div:
+              if (binInst->lhs->type == AsmType::F32) {
+                op = "vdiv"; // 浮点数除法
+              } else {
+                op = "idiv"; // 整数除法
+              }
+              break;
             case AsmInst::Tag::Mod:
-              olc_unreachable("NYI");
+              op = "mod";
               break;
             default:
               olc_unreachable("Unknown");
             }
             auto reg_dst = cast<PReg>(binInst->dst);
             auto reg_lhs = cast<PReg>(binInst->lhs);
-            if (auto reg_rhs = dyn_cast<PReg>(binInst->rhs)) {
+            if (op == "idiv") {
+              // 整数除法
+              printArmInstr("bl", {"__aeabi_idiv"});
+              printArmInstr("mov", {reg_dst->abiName(), "r0"});
+            } else if (op == "vdiv") {
+              // 浮点数除法
+              printArmInstr("vdiv.f32", {reg_dst->abiName(), reg_lhs->abiName(),
+                                      cast<PReg>(binInst->rhs)->abiName()});
+            }
+            else if (op == "mod") {
+              // 整数取模
+              printArmInstr("bl", {"__aeabi_idivmod"});
+              printArmInstr("mov", {reg_dst->abiName(), "r1"});
+            } else if (auto reg_rhs = dyn_cast<PReg>(binInst->rhs)) {
               // os << op << "\t" << x->dst << ", " << x->lhs << ", " << x->rhs;
               printArmInstr(
                   op,
