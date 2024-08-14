@@ -83,6 +83,17 @@ struct CodeGen {
       asmFunc->isBuiltin = irFunc->isBuiltin;
       fnMap[irFunc] = asmFunc;
       asmModule->funcs.push_back(asmFunc);
+      auto args = irFunc->args;
+      for (int i = 0; i < args.size(); ++i) {
+        if (i < 4) {
+          // 声明参数的寄存器 r0-r3
+          auto *res_reg = AsmReg::makePReg(convertType(args[i]->getType()), i);
+          valueMap[args[i]] = res_reg;
+        } else {
+          // 声明参数的栈空间
+          olc_unreachable("NYI");
+        }
+      }
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = new AsmLabel{irBB->label};
         labelMap[irBB] = asmLabel;
@@ -130,6 +141,37 @@ struct CodeGen {
                 lowerValue(irStoreInst->getPointer(), asmLabel);
             asmStoreInst->src = reg_src;
             asmLabel->push_back(asmStoreInst);
+          } else if (auto *irCallInst = dyn_cast<CallInst>(irInst)) {
+            auto args = irCallInst->getArgs();
+            // 参数 r0-r3 / s0-s15
+            for (int i = 0; i < args.size(); ++i) {
+              if (i < 4) {
+                // 寄存器传参
+                auto *asmMovInst = new AsmMoveInst{};
+                asmMovInst->src = lowerValue(args[i], asmLabel);
+                asmMovInst->dst =
+                    AsmReg::makePReg(convertType(args[i]->getType()), i);
+                asmLabel->push_back(asmMovInst);
+              } else {
+                // 栈传参
+                olc_unreachable("NYI");
+              }
+              // bl fname
+              auto *asmCallInst =
+                  new AsmCallInst{irCallInst->getCallee()->fnName};
+              asmLabel->push_back(asmCallInst);
+              // 返回值
+              if (!irCallInst->getType()->isVoidTy()) {
+                // mov value, r0 / s0
+                valueMap[irCallInst] =
+                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
+                auto *asmMovInst = new AsmMoveInst{};
+                asmMovInst->src =
+                    AsmReg::makePReg(convertType(irCallInst->getType()), 0);
+                asmMovInst->dst = lowerValue(irCallInst, asmLabel);
+                asmLabel->push_back(asmMovInst);
+              }
+            }
           } else {
             olc_unreachable("NYI");
           }

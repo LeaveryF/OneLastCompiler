@@ -179,6 +179,8 @@ struct ArmGen {
             assert(!stInst->offset && "offset NYI");
             printArmInstr(
                 "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
+          } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
+            printArmInstr("bl", {callInst->callee});
           } else {
             olc_unreachable("NYI");
           }

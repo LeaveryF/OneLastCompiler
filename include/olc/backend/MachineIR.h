@@ -156,7 +156,7 @@ struct AsmBranchInst : AsmInst {
 struct AsmJumpInst : AsmInst {
   AsmLabel *target = nullptr;
 
-  AsmJumpInst(AsmLabel *target) : AsmInst(Tag::Jump) {}
+  AsmJumpInst(AsmLabel *target) : AsmInst(Tag::Jump), target(target) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Jump; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
@@ -211,6 +211,16 @@ struct AsmMoveInst : AsmInst {
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }
   std::vector<AsmValue **> getUses() override { return {&src}; }
+};
+
+struct AsmCallInst : AsmInst {
+  std::string callee;
+
+  AsmCallInst(std::string callee) : AsmInst(Tag::Call), callee(callee) {}
+  static bool classof(const AsmInst *v) { return v->tag == Tag::Call; }
+
+  std::vector<AsmValue **> getDefs() override { return {}; }
+  std::vector<AsmValue **> getUses() override { return {}; }
 };
 
 struct AsmFunc {
