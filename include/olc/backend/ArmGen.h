@@ -157,8 +157,10 @@ struct ArmGen {
               op = "mul";
               break;
             case AsmInst::Tag::Div:
-
               op = "idiv";
+              if (cast<PReg>(binInst->dst)->type == AsmType::F32) {
+                op = "vdiv";
+              }
               break;
             case AsmInst::Tag::Mod:
               op = "mod";
