@@ -117,12 +117,6 @@ struct AsmLabel : IList<AsmInst> {
   // other informations
 
   AsmLabel(std::string name) : name(name) {}
-
-  template <class InstT, typename... Args> InstT *create(Args &&...args) {
-    auto inst = new InstT(std::forward<Args>(args)...);
-    push_back(inst);
-    return inst;
-  }
 };
 
 struct AsmBinaryInst : AsmInst {

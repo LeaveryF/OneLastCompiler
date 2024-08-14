@@ -69,9 +69,10 @@ struct CodeGen {
       return asmReg;
     } else {
       asmReg = AsmReg::makeVReg(convertType(value->getType()));
-      auto *asmMovInst = label->create<AsmMoveInst>();
+      auto *asmMovInst = new AsmMoveInst{};
       asmMovInst->src = asmValue;
       asmMovInst->dst = asmReg;
+      label->push_back(asmMovInst);
       return asmReg;
     }
   }
@@ -96,7 +97,7 @@ struct CodeGen {
                   AsmReg::makePReg(convertType(retVal->getType()), 0);
               asmLabel->push_back(asmMovInst);
             }
-            asmLabel->create<AsmReturnInst>();
+            asmLabel->push_back(new AsmReturnInst);
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irBinInst->getType()));
             auto *asmBinInst = new AsmBinaryInst{};
