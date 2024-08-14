@@ -18,6 +18,27 @@ struct ArmGen {
 
   ArmGen(std::ostream &os, AsmModule *module) : os(os), module(module) {}
 
+  std::string getCondStr(AsmPredicate pred) {
+    switch (pred) {
+    case AsmPredicate::Al:
+      return "al";
+    case AsmPredicate::Eq:
+      return "eq";
+    case AsmPredicate::Ne:
+      return "ne";
+    case AsmPredicate::Lt:
+      return "lt";
+    case AsmPredicate::Le:
+      return "le";
+    case AsmPredicate::Gt:
+      return "gt";
+    case AsmPredicate::Ge:
+      return "ge";
+    default:
+      olc_unreachable("Unknown condition");
+    }
+  }
+
   void printArmInstr(
       const std::string &op, const std::vector<std::string> &operands) {
 
@@ -136,11 +157,8 @@ struct ArmGen {
               op = "mul";
               break;
             case AsmInst::Tag::Div:
-              if (binInst->lhs->type == AsmType::F32) {
-                op = "vdiv"; // 浮点数除法
-              } else {
-                op = "idiv"; // 整数除法
-              }
+
+              op = "idiv";
               break;
             case AsmInst::Tag::Mod:
               op = "mod";
@@ -156,10 +174,10 @@ struct ArmGen {
               printArmInstr("mov", {reg_dst->abiName(), "r0"});
             } else if (op == "vdiv") {
               // 浮点数除法
-              printArmInstr("vdiv.f32", {reg_dst->abiName(), reg_lhs->abiName(),
-                                      cast<PReg>(binInst->rhs)->abiName()});
-            }
-            else if (op == "mod") {
+              printArmInstr(
+                  "vdiv.f32", {reg_dst->abiName(), reg_lhs->abiName(),
+                               cast<PReg>(binInst->rhs)->abiName()});
+            } else if (op == "mod") {
               // 整数取模
               printArmInstr("bl", {"__aeabi_idivmod"});
               printArmInstr("mov", {reg_dst->abiName(), "r1"});
@@ -189,7 +207,26 @@ struct ArmGen {
                 "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
           } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
             printArmInstr("bl", {callInst->callee});
-          } else {
+          } else if (auto *brInst = dyn_cast<AsmBranchInst>(inst)) {
+            if (brInst->pred != AsmPredicate::Al) {
+              // 处理条件分支
+              std::string condTag = getCondStr(brInst->pred);
+              printArmInstr("b" + condTag, {"." + brInst->trueTarget->name});
+              printArmInstr("b", {"." + brInst->falseTarget->name});
+            } else {
+              // 处理无条件跳转
+              printArmInstr("b", {"." + brInst->trueTarget->name});
+            }
+          } else if (auto *cmpInst = dyn_cast<AsmCompareInst>(inst)) {
+            // 处理比较指令
+            auto reg_lhs = cast<PReg>(cmpInst->lhs);
+            auto reg_rhs = cast<PReg>(cmpInst->rhs);
+            printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
+          } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
+            // 处理无条件跳转指令
+            printArmInstr("b", {"." + jmpInst->target->name});
+          }
+          else {
             olc_unreachable("NYI");
           }
         }

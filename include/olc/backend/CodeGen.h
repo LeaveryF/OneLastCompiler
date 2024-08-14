@@ -19,6 +19,25 @@ struct CodeGen {
 
   CodeGen(Module *module) : irModule(module), asmModule(new AsmModule{}) {}
 
+  AsmPredicate getAsmPred(Value::Tag tag) {
+    switch (tag) {
+    case Value::Tag::Lt:
+      return AsmPredicate::Lt;
+    case Value::Tag::Le:
+      return AsmPredicate::Le;
+    case Value::Tag::Gt:
+      return AsmPredicate::Gt;
+    case Value::Tag::Ge:
+      return AsmPredicate::Ge;
+    case Value::Tag::Eq:
+      return AsmPredicate::Eq;
+    case Value::Tag::Ne:
+      return AsmPredicate::Ne;
+    default:
+      olc_unreachable("invalid tag");
+    }
+  }
+
   AsmType convertType(Type *type) {
     if (type->isFloatTy()) {
       return AsmType::F32;
@@ -39,6 +58,13 @@ struct CodeGen {
       return AsmBinaryInst::Tag::Div;
     case BinaryInst::Tag::Mod:
       return AsmBinaryInst::Tag::Mod;
+    case BinaryInst::Tag::Lt:
+    case BinaryInst::Tag::Le:
+    case BinaryInst::Tag::Gt:
+    case BinaryInst::Tag::Ge:
+    case BinaryInst::Tag::Eq:
+    case BinaryInst::Tag::Ne:
+      return AsmBinaryInst::Tag::Cmp;
     default:
       olc_unreachable("invalid tag");
     }
@@ -172,6 +198,19 @@ struct CodeGen {
                 asmLabel->push_back(asmMovInst);
               }
             }
+          } else if (auto *irBranchInst = dyn_cast<BranchInst>(irInst)) {
+            // 处理分支指令
+            auto *branchInst = new AsmBranchInst{};
+            auto *cond = dyn_cast<BinaryInst>(irBranchInst->getCondition());
+            branchInst->pred = getAsmPred(cond->tag);
+            branchInst->trueTarget = new AsmLabel{irBranchInst->getTrueBlock()->label};
+            branchInst->falseTarget = new AsmLabel{irBranchInst->getFalseBlock()->label};
+            asmLabel->push_back(branchInst);
+          } else if (auto *irJumpInst = dyn_cast<JumpInst>(irInst)) {
+            // 处理无条件跳转指令
+            auto *jumpInst = new AsmJumpInst{nullptr};
+            jumpInst->target = new AsmLabel{irJumpInst->getTargetBlock()->label};
+            asmLabel->push_back(jumpInst);
           } else {
             olc_unreachable("NYI");
           }

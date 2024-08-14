@@ -3,9 +3,11 @@ int func(int p){
 	return p;
 }
 int main(){
-	int a;
-	int b;
-	a = 10;
-	b = func(a);
-	return b;
+    int a, b;
+    a = 270;
+    b = 27;
+    if (a > b) {
+      a = a - b;
+    }
+    return a / b;
 }

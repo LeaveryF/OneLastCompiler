@@ -145,7 +145,8 @@ struct AsmCompareInst : AsmInst {
 
 struct AsmBranchInst : AsmInst {
   AsmPredicate pred = AsmPredicate::Al;
-  AsmLabel *target = nullptr;
+  AsmLabel *trueTarget = nullptr;
+  AsmLabel *falseTarget = nullptr;
 
   AsmBranchInst() : AsmInst(Tag::Branch) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Branch; }
