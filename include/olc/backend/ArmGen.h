@@ -70,6 +70,27 @@ struct ArmGen {
     os << '\n';
   }
 
+  enum class RegSaveType {
+    Push,
+    Pop,
+  };
+
+  /// Print push or pop { ...calleeSavedRegs, lr }
+  void printRegSaveStore(RegSaveType type, AsmFunc *func) {
+    std::string regs;
+    for (auto *reg : func->usedCalleeSavedRegs) {
+      if (!regs.empty())
+        regs += ", ";
+      regs += reg->abiName();
+    }
+    // always save lr
+    if (!regs.empty())
+      regs += ", ";
+    regs += PReg::lr()->abiName();
+    printArmInstr(
+        type == RegSaveType::Push ? "push" : "pop", {"{" + regs + "}"});
+  }
+
   std::string getLabel(AsmLabel *label) {
     if (labelMap.find(label) == labelMap.end()) {
       labelMap[label] = labelMap.size();
@@ -148,6 +169,31 @@ struct ArmGen {
     }
   }
 
+  void calcStackInfo() {
+    for (auto *func : module->funcs) {
+      if (func->isBuiltin)
+        continue;
+
+      auto processReg = [&](AsmValue *reg) {
+        auto *preg = dyn_cast_if_present<PReg>(reg);
+        if (!preg)
+          return;
+        if (preg->id >= 4 && preg->id <= 11) {
+          func->usedCalleeSavedRegs.insert(preg);
+        }
+      };
+
+      for (auto *label : func->labels) {
+        for (auto *inst = label->Head; inst; inst = inst->Next) {
+          for (auto *refdef : inst->getDefs())
+            processReg(*refdef);
+          for (auto *refuse : inst->getUses())
+            processReg(*refuse);
+        }
+      }
+    }
+  }
+
   void printGlobalData(GlobalVariable *global) {
     if (!global->getInitializer())
       return;
@@ -193,6 +239,7 @@ struct ArmGen {
 
   void run() {
     runRegAlloc();
+    calcStackInfo();
 
     os << ".arch armv7ve\n";
 
@@ -218,7 +265,7 @@ struct ArmGen {
       curFunc = func;
 
       // function prologue
-      printArmInstr("push", {"{lr}"});
+      printRegSaveStore(RegSaveType::Push, func);
 
       assert(curFunc->stackSize < 4096 && "Stack size too large");
       printArmInstr(
@@ -231,7 +278,7 @@ struct ArmGen {
             printArmInstr(
                 "add", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
 
-            printArmInstr("pop", {"{lr}"});
+            printRegSaveStore(RegSaveType::Pop, func);
             printArmInstr("bx", {"lr"});
             // TODO: constant pool ltorg?
           } else if (auto *movInst = dyn_cast<AsmMoveInst>(inst)) {
