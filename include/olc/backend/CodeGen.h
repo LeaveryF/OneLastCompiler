@@ -369,11 +369,12 @@ struct CodeGen {
               auto *preg =
                   AsmReg::makePReg(convertType(irCallInst->getType()), 0);
               asmCallInst->callDefs.insert(preg);
-              valueMap[irCallInst] = preg;
+              auto reg_ret = AsmReg::makeVReg(convertType(irCallInst->getType()));
               auto *asmMovInst = new AsmMoveInst{};
               asmMovInst->src = preg;
-              asmMovInst->dst = lowerValue(irCallInst, asmLabel);
+              asmMovInst->dst = reg_ret;
               asmLabel->push_back(asmMovInst);
+              valueMap[irCallInst] = reg_ret;
             }
           } else if (auto *irGEPInst = dyn_cast<GetElementPtrInst>(irInst)) {
             auto *addr = lowerValueToReg(irGEPInst->getPointer(), asmLabel);
