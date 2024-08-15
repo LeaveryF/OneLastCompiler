@@ -42,7 +42,7 @@ std::string CodeWriter::to_string(AsmValue *value) {
     if (auto *preg = dyn_cast<PReg>(reg)) {
       res = preg->abiName();
     } else if (auto *vreg = dyn_cast<VReg>(reg)) {
-      res = "%" + std::to_string(vreg->id);
+      res = vreg->abiName();
     }
   } else if (auto *imm = dyn_cast<AsmImm>(value)) {
     res = std::to_string(imm->hexValue);

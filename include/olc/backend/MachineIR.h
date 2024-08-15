@@ -59,6 +59,14 @@ struct VReg : AsmReg {
   VReg(AsmType type, int id) : AsmReg(Tag::VReg, type, id) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::VReg; }
+
+  std::string abiName() const {
+    if (type == AsmType::F32) {
+      return "%f" + std::to_string(id);
+    } else {
+      return "%i" + std::to_string(id);
+    }
+  }
 };
 
 struct PReg : AsmReg {
@@ -131,7 +139,9 @@ struct AsmBinaryInst : AsmInst {
   int shift = 0;
 
   AsmBinaryInst(Tag tag) : AsmInst(tag) {
-    assert(tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul || tag == Tag::Div || tag == Tag::Mod);
+    assert(
+        tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul ||
+        tag == Tag::Div || tag == Tag::Mod);
   }
   static bool classof(const AsmInst *v) {
     return v->tag == Tag::Add || v->tag == Tag::Sub || v->tag == Tag::Mul ||
@@ -236,7 +246,7 @@ struct AsmCallInst : AsmInst {
   std::vector<AsmValue **> getUses() override { return {}; }
 };
 
-/// Load the address of a global variable into a register 
+/// Load the address of a global variable into a register
 struct AsmLoadGlobalInst : AsmInst {
   AsmValue *dst = nullptr;
   GlobalVariable *var = nullptr;
