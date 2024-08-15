@@ -94,18 +94,25 @@ struct CodeGen {
     }
   }
 
+  // Immediate is always loaded into a I32 reg. If we need load float immediate,
+  // we should insert an extra `vmov.f32 s0, r0` instruction.
+  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label) {
+    auto asmReg = AsmReg::makeVReg(AsmType::I32);
+    auto *asmMovInst = new AsmMoveInst{};
+    asmMovInst->src = imm;
+    asmMovInst->dst = asmReg;
+    label->push_back(asmMovInst);
+    return asmReg;
+  }
+
   AsmReg *lowerValueToReg(Value *value, AsmLabel *label) {
     auto *asmValue = lowerValue(value, label);
     if (auto *asmReg = dyn_cast<AsmReg>(asmValue)) {
       return asmReg;
-    } else {
-      asmReg = AsmReg::makeVReg(convertType(value->getType()));
-      auto *asmMovInst = new AsmMoveInst{};
-      asmMovInst->src = asmValue;
-      asmMovInst->dst = asmReg;
-      label->push_back(asmMovInst);
-      return asmReg;
     }
+    if (value->getType()->isFloatTy())
+      olc_unreachable("Float imm NYI, see the comment of loadImmToReg");
+    return loadImmToReg(cast<AsmImm>(asmValue), label);
   }
 
   struct CallInfo {
@@ -273,6 +280,30 @@ struct CodeGen {
             auto *jumpInst = new AsmJumpInst{nullptr};
             jumpInst->target = labelMap.at(irJumpInst->getTargetBlock());
             asmLabel->push_back(jumpInst);
+          } else if (auto *irGEPInst = dyn_cast<GetElementPtrInst>(irInst)) {
+            auto *addr = lowerValueToReg(irGEPInst->getPointer(), asmLabel);
+            auto *offset = lowerValue(irGEPInst->getIndex(), asmLabel);
+            auto *asmBinInst = new AsmBinaryInst{AsmInst::Tag::Add};
+            asmBinInst->lhs = addr;
+            asmBinInst->dst =
+                AsmReg::makeVReg(convertType(irGEPInst->getType()));
+            // word size is 4, the offset must x4
+            // if imm, just calc it; if reg, use lsl #2
+            if (auto *immOffset = dyn_cast<AsmImm>(offset)) {
+
+              if (immOffset->hexValue * 4 < 4096)
+                asmBinInst->rhs = new AsmImm{immOffset->hexValue * 4};
+              else
+                asmBinInst->rhs = loadImmToReg(immOffset, asmLabel);
+            } else {
+              asmBinInst->rhs = offset;
+            }
+            if (!isa<AsmImm>(asmBinInst->rhs)) {
+              asmBinInst->shift = 2;
+            }
+
+            asmLabel->push_back(asmBinInst);
+            valueMap[irGEPInst] = asmBinInst->dst;
           } else {
             olc_unreachable("NYI");
           }

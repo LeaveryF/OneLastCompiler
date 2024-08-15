@@ -277,18 +277,22 @@ struct ArmGen {
             }
             auto reg_dst = cast<PReg>(binInst->dst);
             auto reg_lhs = cast<PReg>(binInst->lhs);
+            std::vector<std::string> operands;
             if (auto reg_rhs = dyn_cast<PReg>(binInst->rhs)) {
-              // os << op << "\t" << x->dst << ", " << x->lhs << ", " << x->rhs;
-              printArmInstr(
-                  op,
-                  {reg_dst->abiName(), reg_lhs->abiName(), reg_rhs->abiName()});
+              operands = {
+                  reg_dst->abiName(), reg_lhs->abiName(), reg_rhs->abiName()};
             } else {
               auto imm = cast<AsmImm>(binInst->rhs);
               assert(imm->hexValue < 4096 && "imm12bit, large imm NYI");
-              printArmInstr(
-                  op, {reg_dst->abiName(), reg_lhs->abiName(),
-                       "#" + std::to_string(imm->hexValue)});
+              operands = {
+                  reg_dst->abiName(), reg_lhs->abiName(),
+                  "#" + std::to_string(imm->hexValue)};
             }
+            if (binInst->shift != 0) {
+              assert(binInst->shift > 0 && "Only LSL is supported");
+              operands.push_back("lsl #" + std::to_string(binInst->shift));
+            }
+            printArmInstr(op, operands);
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
             auto reg_dst = cast<PReg>(ldInst->dst);
             auto reg_base = cast<PReg>(ldInst->addr);

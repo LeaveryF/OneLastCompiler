@@ -121,6 +121,7 @@ struct AsmLabel : IList<AsmInst> {
 
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
+  int shift = 0;
 
   AsmBinaryInst(Tag tag) : AsmInst(tag) {
     assert(tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul || tag == Tag::Div || tag == Tag::Mod);
