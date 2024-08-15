@@ -149,6 +149,9 @@ struct ArmGen {
 
       for (auto *label : func->labels) {
         for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
+          // We only have 1 temp reg: lr. If > 1 def or use is spilled for an
+          // instruction, we cannot handle it.
+          int cntSpillDef = 0, cntSpillUse = 0;
           for (auto refdef : inst->getDefs()) {
             auto &def = *refdef;
             assert(isa<AsmReg>(def) && "Non-reg def!");
@@ -158,6 +161,8 @@ struct ArmGen {
               if (auto it = regMap.find(vreg); it != regMap.end()) {
                 def = it->second;
               } else if (regAlloc.spills.count(vreg)) {
+                assert(cntSpillDef < 1 && "Too many spills in an inst");
+                cntSpillDef++;
                 // spill it with str lr
                 def = PReg::lr();
                 int offset = spillMap.at(vreg);
@@ -180,6 +185,8 @@ struct ArmGen {
               if (auto it = regMap.find(vreg); it != regMap.end()) {
                 use = it->second;
               } else if (regAlloc.spills.count(vreg)) {
+                assert(cntSpillUse < 1 && "Too many spills in an inst");
+                cntSpillUse++;
                 // load it with ldr lr
                 use = PReg::lr();
                 int offset = spillMap.at(vreg);
