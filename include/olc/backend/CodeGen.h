@@ -250,13 +250,13 @@ struct CodeGen {
                 auto *asmMovTrue = new AsmMoveInst{};
                 asmMovTrue->src = lowerImm(1);
                 asmMovTrue->dst = dst;
-                asmMovTrue->pred = getAsmPred(irBinInst->tag);
+                asmMovTrue->pred = convertAsmPredTag(irBinInst->tag);
                 asmLabel->push_back(asmMovTrue);
                 // mov#cond r0, 0
                 auto *asmMovFalse = new AsmMoveInst{};
                 asmMovFalse->src = lowerImm(0);
                 asmMovFalse->dst = dst;
-                asmMovFalse->pred = getNotAsmPred(getAsmPred(irBinInst->tag));
+                asmMovFalse->pred = getNotAsmPred(convertAsmPredTag(irBinInst->tag));
                 asmLabel->push_back(asmMovFalse);
 
                 valueMap[irBinInst] = asmMovTrue->dst;
