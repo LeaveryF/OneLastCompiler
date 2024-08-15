@@ -59,15 +59,9 @@ void CodeWriter::printInst(AsmInst *inst) {
 
   std::string op = tags[(int)inst->tag];
   if (auto *binInst = dyn_cast<AsmBinaryInst>(inst)) {
-    // printValue(binInst->lhs);
-    // os << ", ";
-    // printValue(binInst->rhs);
-    // os << ", ";
-    // printValue(binInst->dst);
-    // os << "\n";
     printCodeInstr(
-        op, {to_string(binInst->lhs), to_string(binInst->rhs),
-             to_string(binInst->dst)});
+        op, {to_string(binInst->dst), to_string(binInst->lhs),
+             to_string(binInst->rhs)});
 
   } else if (auto *cmpInst = dyn_cast<AsmCompareInst>(inst)) {
     printCodeInstr(op, {to_string(cmpInst->lhs), to_string(cmpInst->rhs)});
