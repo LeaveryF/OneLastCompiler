@@ -87,29 +87,36 @@ struct LinearScan {
       }
     }
 
-    for (auto &&[reg, intv] : intvs) {
-      scanningIntervals.emplace(reg, intv);
-      std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
-                << " start " << intv.first << " end " << intv.second << '\n';
-    }
-
     // Resolve caller saved regs in fixed
     for (auto &label : func->labels) {
       for (auto inst = label->Head; inst; inst = inst->Next) {
         if (isa<AsmCallInst>(inst)) {
           // insert caller saves
           for (int i = 0; i < 4; i++) {
-            InstID id = 2 * analysis.instOrdering.instIDMap.at(inst);
+            InstID id = analysis.instOrdering.instIDMap.at(inst);
             auto *preg = AsmReg::makePReg(AsmType::I32, i);
             fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
           }
           for (int i = 0; i < 16; i++) {
-            InstID id = 2 * analysis.instOrdering.instIDMap.at(inst);
+            InstID id = analysis.instOrdering.instIDMap.at(inst);
             auto *preg = AsmReg::makePReg(AsmType::F32, i);
             fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
           }
         }
       }
+    }
+
+    // debug print
+    for (auto &&[reg, intv] : intvs) {
+      scanningIntervals.emplace(reg, intv);
+      std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+                << " start " << intv.first << " end " << intv.second << '\n';
+    }
+    std::cerr << "\n";
+    for (auto &&[reg, intvs] : fixedIntervals) {
+      for (auto &intv : intvs)
+        std::cerr << "fixed " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+                  << " start " << intv.start << " end " << intv.end << '\n';
     }
   }
 
@@ -183,9 +190,13 @@ struct LinearScan {
 
     auto &pool = intv.var->type == AsmType::F32 ? freeFloatRegs : freeIntRegs;
 
-    if (auto *preg = allocateFromPool(pool))
+    if (auto *preg = allocateFromPool(pool)) {
+      std::cerr << "Allocated "
+                << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
+                << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+                << intv.var->id << '\n';
       regMap[intv.var] = preg;
-    else
+    } else
       return false;
     activeIntervals.insert(intv);
     return true;
