@@ -50,12 +50,16 @@ struct ArmGen {
   }
 
   void printArmInstr(
-      const std::string &op, const std::vector<std::string> &operands) {
+      const std::string &op, const std::vector<std::string> &operands,
+      AsmPredicate pred = AsmPredicate::Al) {
 
     // indent for instructions
     os << "  ";
 
     os << op;
+    if (pred != AsmPredicate::Al) {
+      os << getCondStr(pred);
+    }
     os << " ";
     for (int i = 0; i < operands.size(); ++i) {
       if (i > 0) {
@@ -114,6 +118,9 @@ struct ArmGen {
                 generateSpillAddress(storeSlotInst, offset);
                 storeSlotInst->src = def;
                 label->push_after(inst, storeSlotInst);
+              } else {
+                // unused dst
+                def = PReg::lr();
               }
             } else {
               olc_unreachable("Invalid asm reg for def");
@@ -238,12 +245,16 @@ struct ArmGen {
                 };
               } u;
               u.i = imm->hexValue;
-              printArmInstr("movw", {reg_dst->abiName(), std::to_string(u.lo)});
+              printArmInstr(
+                  "movw", {reg_dst->abiName(), std::to_string(u.lo)},
+                  movInst->pred);
               if (u.hi > 0)
                 printArmInstr(
-                    "movt", {reg_dst->abiName(), std::to_string(u.hi)});
+                    "movt", {reg_dst->abiName(), std::to_string(u.hi)},
+                    movInst->pred);
             } else if (auto *reg = dyn_cast<PReg>(movInst->src)) {
-              printArmInstr("mov", {reg_dst->abiName(), reg->abiName()});
+              printArmInstr(
+                  "mov", {reg_dst->abiName(), reg->abiName()}, movInst->pred);
             } else {
               olc_unreachable("NYI");
             }
