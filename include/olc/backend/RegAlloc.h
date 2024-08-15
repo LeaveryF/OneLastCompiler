@@ -91,17 +91,20 @@ struct LinearScan {
     for (auto &label : func->labels) {
       for (auto inst = label->Head; inst; inst = inst->Next) {
         if (isa<AsmCallInst>(inst)) {
+          InstID id = analysis.instOrdering.instIDMap.at(inst);
           // insert caller saves
           for (int i = 0; i < 4; i++) {
-            InstID id = analysis.instOrdering.instIDMap.at(inst);
             auto *preg = AsmReg::makePReg(AsmType::I32, i);
             fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
           }
           for (int i = 0; i < 16; i++) {
-            InstID id = analysis.instOrdering.instIDMap.at(inst);
             auto *preg = AsmReg::makePReg(AsmType::F32, i);
             fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
           }
+
+          // r12 (ip)
+          auto *preg = AsmReg::makePReg(AsmType::I32, 12);
+          fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
         }
       }
     }
