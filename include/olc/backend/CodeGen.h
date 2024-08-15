@@ -90,14 +90,30 @@ struct CodeGen {
     }
   }
 
-  AsmImm *lowerImm(int value) {
-    return new AsmImm{static_cast<uint32_t>(value)};
+  template <AsmImm::LoadMethod method = AsmImm::AlwaysReg>
+  AsmValue *lowerImm(int32_t value, AsmLabel *label) {
+    bool useReg = method == AsmImm::AlwaysReg || !AsmImm::match<method>(value);
+    if (useReg) {
+      return loadImmToReg(new AsmImm{value}, label);
+    } else {
+      return new AsmImm{value};
+    }
   }
 
+  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label) {
+    auto asmReg = AsmReg::makeVReg(AsmType::I32);
+    auto *asmMovInst = new AsmMoveInst{};
+    asmMovInst->src = imm;
+    asmMovInst->dst = asmReg;
+    label->push_back(asmMovInst);
+    return asmReg;
+  }
+
+  template <AsmImm::LoadMethod method = AsmImm::AlwaysReg>
   AsmValue *lowerValue(Value *value, AsmLabel *label) {
     if (auto *irConst = dyn_cast<ConstantValue>(value)) {
       if (irConst->isInt()) {
-        return lowerImm(irConst->getInt());
+        return lowerImm<method>(irConst->getInt(), label);
       } else {
         olc_unreachable("float NYI");
       }
@@ -110,27 +126,6 @@ struct CodeGen {
     } else {
       return valueMap.at(value);
     }
-  }
-
-  // Immediate is always loaded into a I32 reg. If we need load float immediate,
-  // we should insert an extra `vmov.f32 s0, r0` instruction.
-  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label) {
-    auto asmReg = AsmReg::makeVReg(AsmType::I32);
-    auto *asmMovInst = new AsmMoveInst{};
-    asmMovInst->src = imm;
-    asmMovInst->dst = asmReg;
-    label->push_back(asmMovInst);
-    return asmReg;
-  }
-
-  AsmReg *lowerValueToReg(Value *value, AsmLabel *label) {
-    auto *asmValue = lowerValue(value, label);
-    if (auto *asmReg = dyn_cast<AsmReg>(asmValue)) {
-      return asmReg;
-    }
-    if (value->getType()->isFloatTy())
-      olc_unreachable("Float imm NYI, see the comment of loadImmToReg");
-    return loadImmToReg(cast<AsmImm>(asmValue), label);
   }
 
   struct CallInfo {
@@ -210,7 +205,7 @@ struct CodeGen {
           auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
           auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
           spOffsetInst->lhs = AsmReg::sp();
-          spOffsetInst->rhs = lowerImm(argsOffset);
+          spOffsetInst->rhs = lowerImm<AsmImm::Operand2>(argsOffset, asmEntry);
           spOffsetInst->dst = reg_tmp;
           asmEntry->push_back(spOffsetInst);
           // 保存以备后续替换计算真实偏移
@@ -244,8 +239,9 @@ struct CodeGen {
             auto opTag = convertBinOpTag(irBinInst->tag);
             if (opTag == AsmBinaryInst::Tag::Cmp) {
               auto *asmCmpInst = new AsmCompareInst{};
-              asmCmpInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
-              asmCmpInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
+              asmCmpInst->lhs = lowerValue(irBinInst->getLHS(), asmLabel);
+              asmCmpInst->rhs =
+                  lowerValue<AsmImm::Operand2>(irBinInst->getRHS(), asmLabel);
               asmLabel->push_back(asmCmpInst);
               bool allUseIsBr = std::all_of(
                   irBinInst->uses.begin(), irBinInst->uses.end(),
@@ -255,13 +251,13 @@ struct CodeGen {
 
                 // mov#cond r0, 1
                 auto *asmMovTrue = new AsmMoveInst{};
-                asmMovTrue->src = lowerImm(1);
+                asmMovTrue->src = lowerImm<AsmImm::Imm32bit>(1, asmLabel);
                 asmMovTrue->dst = dst;
                 asmMovTrue->pred = convertAsmPredTag(irBinInst->tag);
                 asmLabel->push_back(asmMovTrue);
                 // mov#cond r0, 0
                 auto *asmMovFalse = new AsmMoveInst{};
-                asmMovFalse->src = lowerImm(0);
+                asmMovFalse->src = lowerImm<AsmImm::Imm32bit>(0, asmLabel);
                 asmMovFalse->dst = dst;
                 asmMovFalse->pred =
                     getNotAsmPred(convertAsmPredTag(irBinInst->tag));
@@ -272,8 +268,15 @@ struct CodeGen {
             } else {
               auto *asmBinInst = new AsmBinaryInst{opTag};
               // TODO: optimize with immediates
-              asmBinInst->lhs = lowerValueToReg(irBinInst->getLHS(), asmLabel);
-              asmBinInst->rhs = lowerValueToReg(irBinInst->getRHS(), asmLabel);
+              asmBinInst->lhs = lowerValue(irBinInst->getLHS(), asmLabel);
+              // add and sub allows Operand2, but mul and sdiv requires reg
+              if (opTag == AsmBinaryInst::Tag::Add ||
+                  opTag == AsmBinaryInst::Tag::Sub) {
+                asmBinInst->rhs =
+                    lowerValue<AsmImm::Operand2>(irBinInst->getRHS(), asmLabel);
+              } else {
+                asmBinInst->rhs = lowerValue(irBinInst->getRHS(), asmLabel);
+              }
               asmBinInst->dst = reg_res;
               valueMap[irBinInst] = reg_res;
               asmLabel->push_back(asmBinInst);
@@ -281,7 +284,8 @@ struct CodeGen {
           } else if (auto *irAllocaInst = dyn_cast<AllocaInst>(irInst)) {
             auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
             spOffsetInst->lhs = AsmReg::sp();
-            spOffsetInst->rhs = lowerImm(asmFunc->stackSize);
+            spOffsetInst->rhs =
+                lowerImm<AsmImm::Operand2>(asmFunc->stackSize, asmLabel);
             spOffsetInst->dst = AsmReg::makeVReg(AsmType::I32);
             valueMap[irAllocaInst] = spOffsetInst->dst;
             asmFunc->stackSize += irAllocaInst->getAllocatedSize();
@@ -289,15 +293,16 @@ struct CodeGen {
           } else if (auto *irLoadInst = dyn_cast<LoadInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irLoadInst->getType()));
             auto *asmLoadInst = new AsmLoadInst{};
-            asmLoadInst->addr = lowerValue(irLoadInst->getPointer(), asmLabel);
+            asmLoadInst->addr = lowerValue<AsmImm::Imm12bit>(
+                irLoadInst->getPointer(), asmLabel);
             asmLoadInst->dst = reg_res;
             valueMap[irLoadInst] = reg_res;
             asmLabel->push_back(asmLoadInst);
           } else if (auto *irStoreInst = dyn_cast<StoreInst>(irInst)) {
-            auto reg_src = lowerValueToReg(irStoreInst->getValue(), asmLabel);
+            auto reg_src = lowerValue(irStoreInst->getValue(), asmLabel);
             auto *asmStoreInst = new AsmStoreInst{};
-            asmStoreInst->addr =
-                lowerValue(irStoreInst->getPointer(), asmLabel);
+            asmStoreInst->addr = lowerValue<AsmImm::Imm12bit>(
+                irStoreInst->getPointer(), asmLabel);
             asmStoreInst->src = reg_src;
             asmLabel->push_back(asmStoreInst);
           } else if (auto *irCallInst = dyn_cast<CallInst>(irInst)) {
@@ -331,14 +336,15 @@ struct CodeGen {
               // sub rx, sp, (n-i)*4
               auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Sub};
               spOffsetInst->lhs = AsmReg::sp();
-              spOffsetInst->rhs = lowerImm(totalArgsSpace - argsOffset);
+              spOffsetInst->rhs = lowerImm<AsmImm::Operand2>(
+                  totalArgsSpace - argsOffset, asmLabel);
               spOffsetInst->dst =
                   AsmReg::makeVReg(convertType(argOnStack->getType()));
               asmLabel->push_back(spOffsetInst);
               // str value, [rx]
               auto *asmStoreInst = new AsmStoreInst{};
               asmStoreInst->addr = spOffsetInst->dst;
-              asmStoreInst->src = lowerValueToReg(argOnStack, asmLabel);
+              asmStoreInst->src = lowerValue(argOnStack, asmLabel);
               asmLabel->push_back(asmStoreInst);
               argsOffset += 4;
             }
@@ -351,7 +357,7 @@ struct CodeGen {
               // sub sp, sp, (n-4)*4
               auto *subInst = new AsmBinaryInst{AsmInst::Tag::Sub};
               subInst->lhs = AsmReg::sp();
-              subInst->rhs = lowerImm(argsOffset);
+              subInst->rhs = lowerImm<AsmImm::Operand2>(argsOffset, asmLabel);
               subInst->dst = AsmReg::sp();
               asmLabel->push_back(subInst);
             }
@@ -362,7 +368,7 @@ struct CodeGen {
               // add sp, sp, (n-4)*4
               auto *addInst = new AsmBinaryInst{AsmInst::Tag::Add};
               addInst->lhs = AsmReg::sp();
-              addInst->rhs = lowerImm(argsOffset);
+              addInst->rhs = lowerImm<AsmImm::Operand2>(argsOffset, asmLabel);
               addInst->dst = AsmReg::sp();
               asmLabel->push_back(addInst);
             }
@@ -380,8 +386,10 @@ struct CodeGen {
               valueMap[irCallInst] = reg_ret;
             }
           } else if (auto *irGEPInst = dyn_cast<GetElementPtrInst>(irInst)) {
-            auto *addr = lowerValueToReg(irGEPInst->getPointer(), asmLabel);
-            auto *offset = lowerValue(irGEPInst->getIndex(), asmLabel);
+            auto *addr = lowerValue(irGEPInst->getPointer(), asmLabel);
+            // Load it to immediate anyway, we have other logic below.
+            auto *offset =
+                lowerValue<AsmImm::Imm32bit>(irGEPInst->getIndex(), asmLabel);
             auto *asmBinInst = new AsmBinaryInst{AsmInst::Tag::Add};
             asmBinInst->lhs = addr;
             asmBinInst->dst =
@@ -389,11 +397,11 @@ struct CodeGen {
             // word size is 4, the offset must x4
             // if imm, just calc it; if reg, use lsl #2
             if (auto *immOffset = dyn_cast<AsmImm>(offset)) {
-
-              if (immOffset->hexValue * 4 < 4096)
-                asmBinInst->rhs = new AsmImm{immOffset->hexValue * 4};
+              if (auto offsetx4 = immOffset->hexValue * 4;
+                  AsmImm::match<AsmImm::Operand2>(offsetx4))
+                asmBinInst->rhs = new AsmImm{offsetx4};
               else
-                asmBinInst->rhs = loadImmToReg(immOffset, asmLabel);
+                asmBinInst->rhs = lowerImm(immOffset->hexValue, asmLabel);
             } else {
               asmBinInst->rhs = offset;
             }

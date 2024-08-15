@@ -75,6 +75,18 @@ struct ArmGen {
     Pop,
   };
 
+  void printStackMovement(RegSaveType type, AsmFunc *func) {
+    int size = func->stackSize;
+    std::string op = type == RegSaveType::Push ? "sub" : "add";
+    if (AsmImm::match<AsmImm::Operand2>(size)) {
+      printArmInstr(op, {"sp", "sp", "#" + std::to_string(size)});
+    } else {
+      // use lr as temp reg, which is covered by reg save store
+      printArmInstr("ldr", {"lr", "=" + std::to_string(size)});
+      printArmInstr(op, {"sp", "lr"});
+    }
+  }
+
   /// Print push or pop { ...calleeSavedRegs, lr }
   void printRegSaveStore(RegSaveType type, AsmFunc *func) {
     std::string regs;
@@ -279,18 +291,13 @@ struct ArmGen {
 
       // function prologue
       printRegSaveStore(RegSaveType::Push, func);
-
-      assert(curFunc->stackSize < 4096 && "Stack size too large");
-      printArmInstr(
-          "sub", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
+      printStackMovement(RegSaveType::Push, func);
 
       for (auto *label : func->labels) {
         os << getLabel(label) << ":\n";
         for (auto *inst = label->Head; inst; inst = inst->Next) {
           if (auto *retInst = dyn_cast<AsmReturnInst>(inst)) {
-            printArmInstr(
-                "add", {"sp", "sp", "#" + std::to_string(curFunc->stackSize)});
-
+            printStackMovement(RegSaveType::Pop, func);
             printRegSaveStore(RegSaveType::Pop, func);
             printArmInstr("bx", {"lr"});
             printArmInstr(".ltorg");
@@ -354,10 +361,7 @@ struct ArmGen {
                   reg_dst->abiName(), reg_lhs->abiName(), reg_rhs->abiName()};
             } else {
               auto imm = cast<AsmImm>(binInst->rhs);
-              assert(imm->hexValue < 4096 && "imm12bit, large imm NYI");
-              operands = {
-                  reg_dst->abiName(), reg_lhs->abiName(),
-                  "#" + std::to_string(imm->hexValue)};
+              operands = {reg_dst->abiName(), reg_lhs->abiName(), imm->toAsm()};
             }
             if (binInst->shift != 0) {
               assert(binInst->shift > 0 && "Only LSL is supported");
@@ -403,8 +407,14 @@ struct ArmGen {
           } else if (auto *cmpInst = dyn_cast<AsmCompareInst>(inst)) {
             // 处理比较指令
             auto reg_lhs = cast<PReg>(cmpInst->lhs);
-            auto reg_rhs = cast<PReg>(cmpInst->rhs);
-            printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
+            if (auto reg_rhs = dyn_cast<PReg>(cmpInst->rhs))
+              printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
+            else if (auto *imm_rhs = dyn_cast<AsmImm>(cmpInst->rhs)) {
+              printArmInstr("cmp", {reg_lhs->abiName(), imm_rhs->toAsm()});
+            } else {
+              olc_unreachable("NYI");
+            }
+
           } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
             // 处理无条件跳转指令
             printArmInstr("b", {getLabel(jmpInst->target)});

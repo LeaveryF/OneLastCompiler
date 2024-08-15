@@ -92,13 +92,52 @@ struct PReg : AsmReg {
 };
 
 struct AsmImm : AsmValue {
-  uint32_t hexValue;
+  int64_t hexValue;
 
-  AsmImm(uint32_t hexValue) : AsmValue(Tag::Imm), hexValue(hexValue) {}
+  AsmImm(int64_t hexValue) : AsmValue(Tag::Imm), hexValue(hexValue) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::Imm; }
 
   std::string toAsm() const { return "#" + std::to_string(hexValue); }
+
+  enum LoadMethod {
+    Operand2,
+    Imm8bitx4,
+    Imm8bit,
+    Imm12bit,
+    Imm32bit,
+    AlwaysReg,
+  };
+
+  static int64_t getBitRepr(int32_t imm) { return imm; }
+
+  static int64_t getBitRepr(float imm) {
+    return *reinterpret_cast<int32_t *>(&imm);
+  }
+
+  // https://alisdair.mcdiarmid.org/arm-immediate-value-encoding/
+  template <LoadMethod method> static bool match(int32_t imm) {
+    if constexpr (method == LoadMethod::Operand2) {
+      uint32_t encoding = imm;
+      for (int ror = 0; ror < 32; ror += 2) {
+        if (!(encoding & ~0xFFu)) {
+          return true;
+        }
+        encoding = (encoding << 2u) | (encoding >> 30u);
+      }
+      return false;
+    } else if constexpr (method == LoadMethod::Imm8bitx4) {
+      if (imm & 3)
+        return false;
+      return match<LoadMethod::Imm8bit>(imm >> 2);
+    } else if constexpr (method == LoadMethod::Imm8bit) {
+      return (imm & ~0xFF) == 0;
+    } else if constexpr (method == LoadMethod::Imm12bit) {
+      return (imm & ~0xFFF) == 0;
+    } else {
+      return true;
+    }
+  }
 };
 
 struct AsmInst : IListNode<AsmInst> {
