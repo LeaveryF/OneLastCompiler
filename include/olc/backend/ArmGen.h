@@ -114,6 +114,9 @@ struct ArmGen {
                 generateSpillAddress(storeSlotInst, offset);
                 storeSlotInst->src = def;
                 label->push_after(inst, storeSlotInst);
+              } else {
+                // unused dst
+                def = PReg::lr();
               }
             } else {
               olc_unreachable("Invalid asm reg for def");
