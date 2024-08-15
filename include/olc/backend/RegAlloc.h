@@ -106,9 +106,12 @@ struct LinearScan {
       }
     }
 
+    for (auto &&[reg, intv] : intvs) {
+      scanningIntervals.emplace(reg, intv);
+    }
+
     // debug print
     // for (auto &&[reg, intv] : intvs) {
-    //   scanningIntervals.emplace(reg, intv);
     //   std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
     //             << " start " << intv.first << " end " << intv.second << '\n';
     // }
@@ -158,8 +161,12 @@ struct LinearScan {
       regMap[intv.var] = preg;
       activeIntervals.erase(spill);
       activeIntervals.insert(intv);
+      // std::cerr << "Spilled " << (spill.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << spill.var->id << " to stack\n";
       spills.insert(spill.var);
     } else {
+      // std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << intv.var->id << " to stack\n";
       spills.insert(intv.var);
     }
   }
