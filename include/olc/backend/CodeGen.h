@@ -142,13 +142,13 @@ struct CodeGen {
   template <typename T>
   auto arrangeCallInfo(std::vector<T> const &args) -> CallInfo {
     CallInfo info{};
-    constexpr size_t maxIntRegs = 4, maxFloatRegs = 16;
     for (auto const &rarg : args) {
       auto arg = cast<Value>(rarg);
-      if (arg->getType()->isIntegerTy() && info.argsInFloatReg.size() < 4) {
-        info.argsInFloatReg.push_back(arg);
-      } else if (arg->getType()->isFloatTy() && info.argsInIntReg.size() < 16) {
+      if (arg->getType()->isIntegerTy() && info.argsInIntReg.size() < 4) {
         info.argsInIntReg.push_back(arg);
+      } else if (
+          arg->getType()->isFloatTy() && info.argsInFloatReg.size() < 16) {
+        info.argsInFloatReg.push_back(arg);
       } else {
         info.argsOnStack.push_back(arg);
       }
@@ -189,15 +189,22 @@ struct CodeGen {
           // 声明参数的栈空间 ldr value, [sp, #(n-i)*4], i = 0..n-1
           int argsOffset = argsOnStack.size() * 4;
           for (const auto &argOnStack : argsOnStack) {
-            // add rx, sp, (n-i)*4 随后将虚拟寄存器交给alloca处理 不需要ldr
+            // add rx, sp, (n-i)*4
+            auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
             auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
             spOffsetInst->lhs = AsmReg::sp();
             spOffsetInst->rhs = lowerImm(argsOffset);
-            spOffsetInst->dst =
-                AsmReg::makeVReg(convertType(argOnStack->getType()));
+            spOffsetInst->dst = reg_tmp;
             asmLabel->push_back(spOffsetInst);
-            valueMap[argOnStack] =
-                AsmReg::makeVReg(convertType(argOnStack->getType()));
+            valueMap[argOnStack] = reg_tmp;
+            // ldr ry, [rx]
+            auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
+            auto *asmLoadInst = new AsmLoadInst{};
+            asmLoadInst->addr = lowerValue(argOnStack, asmLabel);
+            asmLoadInst->dst = reg_res;
+            asmLabel->push_back(asmLoadInst);
+            valueMap[argOnStack] = reg_res;
+            argsOffset -= 4;
           }
         }
         for (auto *irInst : irBB->instructions) {
