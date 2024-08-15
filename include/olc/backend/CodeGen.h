@@ -346,6 +346,7 @@ struct CodeGen {
             addInst->lhs = AsmReg::sp();
             addInst->rhs = lowerImm(argsOffset);
             addInst->dst = AsmReg::sp();
+            asmLabel->push_back(addInst);
             // 返回值 mov value, r0 / s0
             if (!irCallInst->getType()->isVoidTy()) {
               auto *preg =
