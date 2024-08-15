@@ -69,13 +69,13 @@ struct LinearScan {
     };
 
     // debug print
-    for (InstID i = 0; i < liveness.size(); ++i) {
-      for (auto &&reg : liveness[i]) {
-        std::cerr << "inst " << i << " reg " << (isa<PReg>(reg) ? "P" : "V")
-                  << reg->id << " type " << (int)reg->type << '\n';
-      }
-    }
-    std::cerr << "\n";
+    // for (InstID i = 0; i < liveness.size(); ++i) {
+    //   for (auto &&reg : liveness[i]) {
+    //     std::cerr << "inst " << i << " reg " << (isa<PReg>(reg) ? "P" : "V")
+    //               << reg->id << " type " << (int)reg->type << '\n';
+    //   }
+    // }
+    // std::cerr << "\n";
 
     for (InstID i = 0; i < liveness.size(); ++i) {
       for (auto &&reg : liveness[i]) {
@@ -107,17 +107,17 @@ struct LinearScan {
     }
 
     // debug print
-    for (auto &&[reg, intv] : intvs) {
-      scanningIntervals.emplace(reg, intv);
-      std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
-                << " start " << intv.first << " end " << intv.second << '\n';
-    }
-    std::cerr << "\n";
-    for (auto &&[reg, intvs] : fixedIntervals) {
-      for (auto &intv : intvs)
-        std::cerr << "fixed " << (isa<PReg>(reg) ? "P" : "V") << reg->id
-                  << " start " << intv.start << " end " << intv.end << '\n';
-    }
+    // for (auto &&[reg, intv] : intvs) {
+    //   scanningIntervals.emplace(reg, intv);
+    //   std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+    //             << " start " << intv.first << " end " << intv.second << '\n';
+    // }
+    // std::cerr << "\n";
+    // for (auto &&[reg, intvs] : fixedIntervals) {
+    //   for (auto &intv : intvs)
+    //     std::cerr << "fixed " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+    //               << " start " << intv.start << " end " << intv.end << '\n';
+    // }
   }
 
   void runOnFunction(AsmFunc *func) {
@@ -191,10 +191,10 @@ struct LinearScan {
     auto &pool = intv.var->type == AsmType::F32 ? freeFloatRegs : freeIntRegs;
 
     if (auto *preg = allocateFromPool(pool)) {
-      std::cerr << "Allocated "
-                << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
-                << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
-                << intv.var->id << '\n';
+      // std::cerr << "Allocated "
+      //           << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
+      //           << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << intv.var->id << '\n';
       regMap[intv.var] = preg;
     } else
       return false;
