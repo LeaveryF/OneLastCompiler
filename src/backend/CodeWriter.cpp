@@ -94,7 +94,7 @@ void CodeWriter::printInst(AsmInst *inst) {
   } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
     printCodeInstr(op, {callInst->callee});
   } else {
-    olc_unreachable("Invalid asm inst");
+    os << "invalid instr here" << std::endl;
   }
 }
 } // namespace olc
