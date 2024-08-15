@@ -1,11 +1,10 @@
-int func(int p){
-	p = p - 1;
-	return p;
+int sum(int a, int b, int c, int d, int e, int f) {
+	int ans;
+	ans = a + b + c + d + e + f;
+	return ans;
 }
-int main(){
-	int a;
-	int b;
-	a = 10;
-	b = func(a);
-	return b;
+int main() {
+	int a = 1, b = 2, c = 3, d = 4, e = 5, f = 6;
+	int ret = sum(a, b, c, d, e, f);
+	return ret;
 }

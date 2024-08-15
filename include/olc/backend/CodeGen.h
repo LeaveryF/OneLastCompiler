@@ -77,6 +77,28 @@ struct CodeGen {
     }
   }
 
+  struct CallInfo {
+    std::vector<Value *> argsInIntReg, argsInFloatReg;
+    std::vector<Value *> argsOnStack;
+  };
+
+  template <typename T>
+  auto arrangeCallInfo(std::vector<T> const &args) -> CallInfo {
+    CallInfo info{};
+    constexpr size_t maxIntRegs = 4, maxFloatRegs = 16;
+    for (auto const &rarg : args) {
+      auto arg = cast<Value>(rarg);
+      if (arg->getType()->isIntegerTy() && info.argsInFloatReg.size() < 4) {
+        info.argsInFloatReg.push_back(arg);
+      } else if (arg->getType()->isFloatTy() && info.argsInIntReg.size() < 16) {
+        info.argsInIntReg.push_back(arg);
+      } else {
+        info.argsOnStack.push_back(arg);
+      }
+    }
+    return info;
+  }
+
   void run() {
     for (auto *irFunc : irModule->functions) {
       auto asmFunc = new AsmFunc{irFunc->fnName};
@@ -84,20 +106,35 @@ struct CodeGen {
       fnMap[irFunc] = asmFunc;
       asmModule->funcs.push_back(asmFunc);
       auto args = irFunc->args;
-      for (int i = 0; i < args.size(); ++i) {
-        if (i < 4) {
-          // 声明参数的寄存器 r0-r3
-          auto *res_reg = AsmReg::makePReg(convertType(args[i]->getType()), i);
-          valueMap[args[i]] = res_reg;
-        } else {
-          // 声明参数的栈空间
-          olc_unreachable("NYI");
-        }
+
+      auto &&[argsInIntReg, argsInFloatReg, argsOnStack] =
+          arrangeCallInfo(args);
+      // 声明参数的寄存器 r0-r3 / s0-s15
+      for (unsigned i = 0; i < argsInIntReg.size(); i++) {
+        valueMap[argsInIntReg[i]] = AsmReg::makePReg(AsmType::I32, i);
+      }
+      for (unsigned i = 0; i < argsInFloatReg.size(); i++) {
+        valueMap[argsInFloatReg[i]] = AsmReg::makePReg(AsmType::F32, i);
       }
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = new AsmLabel{irBB->label};
         labelMap[irBB] = asmLabel;
         asmFunc->labels.push_back(asmLabel);
+        if (irBB == irFunc->basicBlocks.front()) {
+          // 声明参数的栈空间 ldr value, [sp, #(n-i)*4], i = 0..n-1
+          int argsOffset = argsOnStack.size() * 4;
+          for (const auto &argOnStack : argsOnStack) {
+            // add rx, sp, (n-i)*4 随后将虚拟寄存器交给alloca处理 不需要ldr
+            auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
+            spOffsetInst->lhs = AsmReg::sp();
+            spOffsetInst->rhs = lowerImm(argsOffset);
+            spOffsetInst->dst =
+                AsmReg::makeVReg(convertType(argOnStack->getType()));
+            asmLabel->push_back(spOffsetInst);
+            valueMap[argOnStack] =
+                AsmReg::makeVReg(convertType(argOnStack->getType()));
+          }
+        }
         for (auto *irInst : irBB->instructions) {
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
@@ -143,27 +180,56 @@ struct CodeGen {
             asmLabel->push_back(asmStoreInst);
           } else if (auto *irCallInst = dyn_cast<CallInst>(irInst)) {
             auto args = irCallInst->getArgs();
-            // 参数 r0-r3 / s0-s15
-            for (int i = 0; i < args.size(); ++i) {
-              if (i < 4) {
-                // 寄存器传参
-                auto *asmMovInst = new AsmMoveInst{};
-                asmMovInst->src = lowerValue(args[i], asmLabel);
-                asmMovInst->dst =
-                    AsmReg::makePReg(convertType(args[i]->getType()), i);
-                asmLabel->push_back(asmMovInst);
-              } else {
-                // 栈传参
-                olc_unreachable("NYI");
-              }
+
+            auto &&[argsInIntRegs, argsInFloatRegs, argsOnStack] =
+                arrangeCallInfo(args);
+            // 寄存器传参 r0-r3 / s0-s15  mov ri, value
+            for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = lowerValue(args[i], asmLabel);
+              asmMovInst->dst = AsmReg::makePReg(AsmType::I32, i);
+              asmLabel->push_back(asmMovInst);
             }
-            // bl fname
+            for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
+              auto *asmMovInst = new AsmMoveInst{};
+              asmMovInst->src = lowerValue(args[i], asmLabel);
+              asmMovInst->dst = AsmReg::makePReg(AsmType::F32, i);
+              asmLabel->push_back(asmMovInst);
+            }
+            // 栈传参 str value, [sp, #-(stacksize+i*4)]
+            int argsOffset = 0;
+            for (const auto &argOnStack : argsOnStack) {
+              // sub rx, sp, i*4
+              auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Sub};
+              spOffsetInst->lhs = AsmReg::sp();
+              spOffsetInst->rhs = lowerImm(asmFunc->stackSize + argsOffset);
+              spOffsetInst->dst =
+                  AsmReg::makeVReg(convertType(argOnStack->getType()));
+              asmLabel->push_back(spOffsetInst);
+              // str value, [rx]
+              auto *asmStoreInst = new AsmStoreInst{};
+              asmStoreInst->addr = spOffsetInst->dst;
+              asmStoreInst->src = lowerValueToReg(argOnStack, asmLabel);
+              asmLabel->push_back(asmStoreInst);
+              argsOffset += 4;
+            }
+            // sub sp, sp, (n-4)*4
+            auto *subInst = new AsmBinaryInst{AsmInst::Tag::Sub};
+            subInst->lhs = AsmReg::sp();
+            subInst->rhs = lowerImm(argsOffset);
+            subInst->dst = AsmReg::sp();
+            asmLabel->push_back(subInst);
+            // bl func
             auto *asmCallInst =
                 new AsmCallInst{irCallInst->getCallee()->fnName};
             asmLabel->push_back(asmCallInst);
-            // 返回值
+            // add sp, sp, (n-4)*4
+            auto *addInst = new AsmBinaryInst{AsmInst::Tag::Add};
+            addInst->lhs = AsmReg::sp();
+            addInst->rhs = lowerImm(argsOffset);
+            addInst->dst = AsmReg::sp();
+            // 返回值 mov value, r0 / s0
             if (!irCallInst->getType()->isVoidTy()) {
-              // mov value, r0 / s0
               valueMap[irCallInst] =
                   AsmReg::makePReg(convertType(irCallInst->getType()), 0);
               auto *asmMovInst = new AsmMoveInst{};
