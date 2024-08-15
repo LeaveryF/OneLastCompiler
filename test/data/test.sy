@@ -1,9 +1,9 @@
 int main(){
     int a, b;
-    a = 270;
+    a = 275;
     b = 27;
     if (a > b) {
-      a = a - b;
+      a = a % b;
     }
     return a;
 }
