@@ -71,6 +71,13 @@ struct PReg : AsmReg {
     if (type == AsmType::F32) {
       return "s" + std::to_string(id);
     } else {
+      if (id == 13) {
+        return "sp";
+      } else if (id == 14) {
+        return "lr";
+      } else if (id == 15) {
+        return "pc";
+      }
       return "r" + std::to_string(id);
     }
   }
