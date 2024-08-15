@@ -201,30 +201,28 @@ struct CodeGen {
           auto *preg = AsmReg::makePReg(AsmType::F32, i);
           valueMap[arg] = loadPRegToVReg(preg);
         }
-        for (auto *rarg : argsOnStack) {
-          // 声明参数的栈空间
-          // 这里先使用 sp, (i-4)*4，等 stackSize 与 pushSize 固定后
-          // 将其替换为 sp, stackSize + pushSize + (i-4)*4
-          int argsOffset = 0;
-          for (const auto &argOnStack : argsOnStack) {
-            // add rx, sp, (n-i)*4
-            auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
-            auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
-            spOffsetInst->lhs = AsmReg::sp();
-            spOffsetInst->rhs = lowerImm(argsOffset);
-            spOffsetInst->dst = reg_tmp;
-            asmEntry->push_back(spOffsetInst);
-            // 保存以备后续替换计算真实偏移
-            asmFunc->stackArgOffsets.push_back(spOffsetInst);
-            // ldr ry, [rx]
-            auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
-            auto *asmLoadInst = new AsmLoadInst{};
-            asmLoadInst->addr = reg_tmp;
-            asmLoadInst->dst = reg_res;
-            asmEntry->push_back(asmLoadInst);
-            valueMap[argOnStack] = reg_res;
-            argsOffset += 4;
-          }
+        // 声明参数的栈空间
+        // 这里先使用 sp, (i-4)*4，等 stackSize 与 pushSize 固定后
+        // 将其替换为 sp, stackSize + pushSize + (i-4)*4
+        int argsOffset = argsOnStack.size() % 2 ? 4 : 0;
+        for (const auto &argOnStack : argsOnStack) {
+          // add rx, sp, (n-i)*4
+          auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
+          auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
+          spOffsetInst->lhs = AsmReg::sp();
+          spOffsetInst->rhs = lowerImm(argsOffset);
+          spOffsetInst->dst = reg_tmp;
+          asmEntry->push_back(spOffsetInst);
+          // 保存以备后续替换计算真实偏移
+          asmFunc->stackArgOffsets.push_back(spOffsetInst);
+          // ldr ry, [rx]
+          auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
+          auto *asmLoadInst = new AsmLoadInst{};
+          asmLoadInst->addr = reg_tmp;
+          asmLoadInst->dst = reg_res;
+          asmEntry->push_back(asmLoadInst);
+          valueMap[argOnStack] = reg_res;
+          argsOffset += 4;
         }
       }
 
@@ -327,7 +325,7 @@ struct CodeGen {
               asmLabel->push_back(asmMovInst);
             }
             // 栈传参，倒序压栈
-            int totalArgsSpace = argsOnStack.size() * 4;
+            const int totalArgsSpace = argsOnStack.size() * 4;
             int argsOffset = 0;
             for (const auto &argOnStack : argsOnStack) {
               // sub rx, sp, (n-i)*4
@@ -342,6 +340,10 @@ struct CodeGen {
               asmStoreInst->addr = spOffsetInst->dst;
               asmStoreInst->src = lowerValueToReg(argOnStack, asmLabel);
               asmLabel->push_back(asmStoreInst);
+              argsOffset += 4;
+            }
+            // 对齐到 8
+            if (argsOffset % 8 != 0) {
               argsOffset += 4;
             }
             if (totalArgsSpace != 0) {
@@ -369,7 +371,8 @@ struct CodeGen {
               auto *preg =
                   AsmReg::makePReg(convertType(irCallInst->getType()), 0);
               asmCallInst->callDefs.insert(preg);
-              auto reg_ret = AsmReg::makeVReg(convertType(irCallInst->getType()));
+              auto reg_ret =
+                  AsmReg::makeVReg(convertType(irCallInst->getType()));
               auto *asmMovInst = new AsmMoveInst{};
               asmMovInst->src = preg;
               asmMovInst->dst = reg_ret;

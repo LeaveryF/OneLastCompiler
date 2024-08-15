@@ -196,6 +196,9 @@ struct ArmGen {
 
       // 2. replace stack arg offsets
       const int pushSize = 4 + 4 * func->usedCalleeSavedRegs.size();
+      if ((func->stackSize + pushSize) % 8 != 0) {
+        func->stackSize += 4;
+      }
 
       for (auto *offsetInst : func->stackArgOffsets) {
         auto *offsetImm = cast<AsmImm>(offsetInst->rhs);
