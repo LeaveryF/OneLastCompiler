@@ -4,6 +4,7 @@
 #include <olc/ir/IR.h>
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -39,7 +40,8 @@ struct VReg;
 
 struct AsmReg : AsmValue {
   AsmType type;
-  AsmReg(Tag tag, AsmType type) : AsmValue(tag), type(type) {}
+  int id;
+  AsmReg(Tag tag, AsmType type, int id) : AsmValue(tag), type(type), id(id) {}
 
   static bool classof(const AsmValue *v) {
     return v->tag == Tag::VReg || v->tag == Tag::PReg;
@@ -54,18 +56,13 @@ struct AsmReg : AsmValue {
 };
 
 struct VReg : AsmReg {
-  int id;
-
-  VReg(AsmType type, int id) : AsmReg(Tag::VReg, type), id(id) {}
+  VReg(AsmType type, int id) : AsmReg(Tag::VReg, type, id) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::VReg; }
 };
 
 struct PReg : AsmReg {
-  int id;
-
-  // PReg() : AsmReg(Tag::PReg, AsmType::I32), id(0) {}
-  PReg(AsmType type, int id) : AsmReg(Tag::PReg, type), id(id) {}
+  PReg(AsmType type, int id) : AsmReg(Tag::PReg, type, id) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::PReg; }
 
@@ -85,6 +82,8 @@ struct AsmImm : AsmValue {
   AsmImm(uint32_t hexValue) : AsmValue(Tag::Imm), hexValue(hexValue) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::Imm; }
+
+  std::string toAsm() const { return "#" + std::to_string(hexValue); }
 };
 
 struct AsmInst : IListNode<AsmInst> {
@@ -122,8 +121,11 @@ struct AsmLabel : IList<AsmInst> {
 
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
+  int shift = 0;
 
-  AsmBinaryInst(Tag tag) : AsmInst(tag) {}
+  AsmBinaryInst(Tag tag) : AsmInst(tag) {
+    assert(tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul || tag == Tag::Div || tag == Tag::Mod);
+  }
   static bool classof(const AsmInst *v) {
     return v->tag == Tag::Add || v->tag == Tag::Sub || v->tag == Tag::Mul ||
            v->tag == Tag::Div || v->tag == Tag::Mod;
@@ -145,7 +147,8 @@ struct AsmCompareInst : AsmInst {
 
 struct AsmBranchInst : AsmInst {
   AsmPredicate pred = AsmPredicate::Al;
-  AsmLabel *target = nullptr;
+  AsmLabel *trueTarget = nullptr;
+  AsmLabel *falseTarget = nullptr;
 
   AsmBranchInst() : AsmInst(Tag::Branch) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Branch; }
@@ -205,6 +208,7 @@ struct AsmStoreInst : AsmAccess {
 
 struct AsmMoveInst : AsmInst {
   AsmValue *src = nullptr, *dst = nullptr;
+  AsmPredicate pred = AsmPredicate::Al;
   // TODO: shift
 
   AsmMoveInst() : AsmInst(Tag::Move) {}
@@ -216,11 +220,24 @@ struct AsmMoveInst : AsmInst {
 
 struct AsmCallInst : AsmInst {
   std::string callee;
+  std::set<PReg *> callDefs, callUses;
 
   AsmCallInst(std::string callee) : AsmInst(Tag::Call), callee(callee) {}
   static bool classof(const AsmInst *v) { return v->tag == Tag::Call; }
 
   std::vector<AsmValue **> getDefs() override { return {}; }
+  std::vector<AsmValue **> getUses() override { return {}; }
+};
+
+/// Load the address of a global variable into a register 
+struct AsmLoadGlobalInst : AsmInst {
+  AsmValue *dst = nullptr;
+  GlobalVariable *var = nullptr;
+
+  AsmLoadGlobalInst() : AsmInst(Tag::LoadGlobal) {}
+  static bool classof(const AsmInst *v) { return v->tag == Tag::LoadGlobal; }
+
+  std::vector<AsmValue **> getDefs() override { return {&dst}; }
   std::vector<AsmValue **> getUses() override { return {}; }
 };
 

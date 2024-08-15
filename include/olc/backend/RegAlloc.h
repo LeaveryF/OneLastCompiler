@@ -7,6 +7,7 @@ namespace olc {
 
 struct LivePair {
   AsmReg *var;
+  // close interval
   InstID start, end;
 
   LivePair(AsmReg *var, LiveIntervalT intv)
@@ -15,24 +16,30 @@ struct LivePair {
 public:
   struct StartAscend {
     bool operator()(const LivePair &a, const LivePair &b) const {
-      return a.start < b.start;
+      return a.start < b.start || (a.start == b.start && &a < &b);
     }
   };
 
   struct EndAscend {
     bool operator()(const LivePair &a, const LivePair &b) const {
-      return a.end < b.end;
+      return a.end < b.end || (a.end == b.end && &a < &b);
     }
   };
 };
+
+inline bool hasOverlap(LivePair const &a, LivePair const &b) {
+  return a.start <= b.end && b.start <= a.end;
+}
 
 struct LinearScan {
 
   AsmFunc *func;
   std::set<LivePair, LivePair::StartAscend> scanningIntervals;
   std::set<LivePair, LivePair::EndAscend> activeIntervals;
+  std::map<AsmReg *, std::vector<LivePair>> fixedIntervals;
   // no entry means spilled out
   std::map<AsmReg *, PReg *> regMap;
+  std::set<AsmReg *> spills;
   std::set<PReg *> freeIntRegs, freeFloatRegs;
 
   void initRegs() {
@@ -47,13 +54,13 @@ struct LinearScan {
     analysis.runOnFunction(func);
     auto &liveness = analysis.liveness;
 
-    std::map<AsmReg *, std::pair<InstID, InstID>> activeIntervals;
+    std::map<AsmReg *, std::pair<InstID, InstID>> intvs;
 
-    auto updateInterval = [&](AsmReg *reg, InstID i) {
-      if (activeIntervals.count(reg) == 0) {
-        activeIntervals[reg] = {i, i};
+    auto updateInterval = [&](auto &intvs, AsmReg *reg, InstID i) {
+      if (intvs.count(reg) == 0) {
+        intvs[reg] = {i, i};
       } else {
-        auto &interval = activeIntervals[reg];
+        auto &interval = intvs[reg];
         if (i < interval.first)
           interval.first = i;
         if (i > interval.second)
@@ -61,15 +68,59 @@ struct LinearScan {
       }
     };
 
+    // debug print
+    // for (InstID i = 0; i < liveness.size(); ++i) {
+    //   for (auto &&reg : liveness[i]) {
+    //     std::cerr << "inst " << i << " reg " << (isa<PReg>(reg) ? "P" : "V")
+    //               << reg->id << " type " << (int)reg->type << '\n';
+    //   }
+    // }
+    // std::cerr << "\n";
+
     for (InstID i = 0; i < liveness.size(); ++i) {
       for (auto &&reg : liveness[i]) {
-        updateInterval(reg, i);
+        if (isa<PReg>(reg)) {
+          fixedIntervals[reg].emplace_back(reg, LiveIntervalT{i, i});
+        } else {
+          updateInterval(intvs, reg, i);
+        }
       }
     }
 
-    for (auto &&[reg, intv] : activeIntervals) {
+    // Resolve caller saved regs in fixed
+    for (auto &label : func->labels) {
+      for (auto inst = label->Head; inst; inst = inst->Next) {
+        if (isa<AsmCallInst>(inst)) {
+          // insert caller saves
+          for (int i = 0; i < 4; i++) {
+            InstID id = analysis.instOrdering.instIDMap.at(inst);
+            auto *preg = AsmReg::makePReg(AsmType::I32, i);
+            fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
+          }
+          for (int i = 0; i < 16; i++) {
+            InstID id = analysis.instOrdering.instIDMap.at(inst);
+            auto *preg = AsmReg::makePReg(AsmType::F32, i);
+            fixedIntervals[preg].emplace_back(preg, LiveIntervalT{id, id});
+          }
+        }
+      }
+    }
+
+    for (auto &&[reg, intv] : intvs) {
       scanningIntervals.emplace(reg, intv);
     }
+
+    // debug print
+    // for (auto &&[reg, intv] : intvs) {
+    //   std::cerr << "reg " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+    //             << " start " << intv.first << " end " << intv.second << '\n';
+    // }
+    // std::cerr << "\n";
+    // for (auto &&[reg, intvs] : fixedIntervals) {
+    //   for (auto &intv : intvs)
+    //     std::cerr << "fixed " << (isa<PReg>(reg) ? "P" : "V") << reg->id
+    //               << " start " << intv.start << " end " << intv.end << '\n';
+    // }
   }
 
   void runOnFunction(AsmFunc *func) {
@@ -110,47 +161,50 @@ struct LinearScan {
       regMap[intv.var] = preg;
       activeIntervals.erase(spill);
       activeIntervals.insert(intv);
+      // std::cerr << "Spilled " << (spill.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << spill.var->id << " to stack\n";
+      spills.insert(spill.var);
+    } else {
+      // std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << intv.var->id << " to stack\n";
+      spills.insert(intv.var);
     }
   }
 
   bool tryAllocateReg(LivePair const &intv) {
+    assert(isa<VReg>(intv.var) && "Cannot allocate preg");
 
-    // check if the preg is already allocated, or spill now
-    if (auto *preg = dyn_cast<PReg>(intv.var)) {
-      if (preg->type == AsmType::F32) {
-        if (freeFloatRegs.count(preg)) {
-          freeFloatRegs.erase(preg);
-          return true;
-        } else {
-          return false;
-        }
-      } else {
-        // ignore special regs
-        if (preg->id >= 13) {
-          return true;
-        }
-        if (freeIntRegs.count(preg)) {
-          freeIntRegs.erase(preg);
-          return true;
-        } else {
-          return false;
+    auto isConflictWithFixeds = [&](PReg *reg) -> bool {
+      if (auto it = fixedIntervals.find(reg); it != fixedIntervals.end()) {
+        for (auto &pair : it->second) {
+          if (hasOverlap(pair, intv))
+            return true;
         }
       }
-    }
+      return false;
+    };
 
-    if (intv.var->type == AsmType::F32) {
-      if (freeFloatRegs.empty())
-        return false;
-      auto *reg = *freeFloatRegs.begin();
-      freeFloatRegs.erase(freeFloatRegs.begin());
-      regMap[intv.var] = reg;
-    } else {
-      if (freeIntRegs.empty())
-        return false;
-      auto *reg = *freeIntRegs.begin();
-      freeIntRegs.erase(freeIntRegs.begin());
-      regMap[intv.var] = reg;
-    }
+    auto allocateFromPool = [&](std::set<PReg *> &pool) -> PReg * {
+      for (auto it = pool.begin(); it != pool.end(); it++) {
+        auto *reg = *it;
+        if (!isConflictWithFixeds(reg)) {
+          pool.erase(it);
+          return reg;
+        }
+      }
+      return nullptr;
+    };
+
+    auto &pool = intv.var->type == AsmType::F32 ? freeFloatRegs : freeIntRegs;
+
+    if (auto *preg = allocateFromPool(pool)) {
+      // std::cerr << "Allocated "
+      //           << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
+      //           << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << intv.var->id << '\n';
+      regMap[intv.var] = preg;
+    } else
+      return false;
     activeIntervals.insert(intv);
     return true;
   }

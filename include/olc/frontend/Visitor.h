@@ -722,7 +722,12 @@ public:
     } else if (ctx->op->getText() == "/") {
       tag = Value::Tag::Div;
     } else {
-      tag = Value::Tag::Mod;
+      // Mod
+      Value *quotient = curBasicBlock->create<BinaryInst>(Value::Tag::Div, left, right);
+      Value *product = curBasicBlock->create<BinaryInst>(Value::Tag::Mul, quotient, right);
+      Value *result = curBasicBlock->create<BinaryInst>(Value::Tag::Sub, left, product);
+      valueMap[ctx] = result;
+      return {};
     }
     Value *result = curBasicBlock->create<BinaryInst>(tag, left, right);
     // 返回值

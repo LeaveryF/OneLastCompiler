@@ -126,6 +126,8 @@ void LivenessAnalysis::calcLiveness() {
         if (inst != block->Tail) {
           auto &nextIn = liveness.at(inPoint(inst->Next));
           set_union(outset, nextIn);
+        } else {
+          outset = blockInfo.outRegs;
         }
 
         auto newInset = outset;
@@ -135,10 +137,20 @@ void LivenessAnalysis::calcLiveness() {
           if (auto *var = cast<AsmReg>(*refdef))
             newInset.erase(var);
 
+        if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
+          for (auto *preg : callInst->callDefs)
+            newInset.erase(preg);
+        }
+
         // use
         for (auto *refuse : inst->getUses())
           if (auto *var = dyn_cast_if_present<AsmReg>(*refuse))
             newInset.insert(var);
+        
+        if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
+          for (auto *preg : callInst->callUses)
+            newInset.insert(preg);
+        }
 
         if (newInset != inset) {
           changed = true;
