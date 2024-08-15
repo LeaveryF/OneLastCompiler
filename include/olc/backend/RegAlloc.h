@@ -16,13 +16,13 @@ struct LivePair {
 public:
   struct StartAscend {
     bool operator()(const LivePair &a, const LivePair &b) const {
-      return a.start < b.start || (a.start == b.start && &a < &b);
+      return a.start < b.start || (a.start == b.start && a.var < b.var);
     }
   };
 
   struct EndAscend {
     bool operator()(const LivePair &a, const LivePair &b) const {
-      return a.end < b.end || (a.end == b.end && &a < &b);
+      return a.end < b.end || (a.end == b.end && a.var < b.var);
     }
   };
 };
