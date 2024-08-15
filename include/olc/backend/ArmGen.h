@@ -17,6 +17,12 @@ struct ArmGen {
   AsmFunc *curFunc = nullptr;
   std::unordered_map<AsmLabel *, int> labelMap;
 
+  // When exceeding 1000, split the label and insert ltorg.
+  size_t labelInstCounter = 0;
+  // Generate a unique name for the new split label.
+  size_t labelSplitCounter = 0;
+  static constexpr size_t kMaxInstInLabel = 1000;
+
   ArmGen(std::ostream &os, AsmModule *module) : os(os), module(module) {}
 
   std::string getCondStr(AsmPredicate pred) {
@@ -68,6 +74,14 @@ struct ArmGen {
       os << operands[i];
     }
     os << '\n';
+
+    if (++labelInstCounter > kMaxInstInLabel) {
+      labelInstCounter = 0;
+      auto name = "split_label_" + std::to_string(labelSplitCounter++);
+      os << "  b " << name << "\n";
+      os << ".ltorg\n";
+      os << name << ":\n";
+    }
   }
 
   enum class RegSaveType {
@@ -294,6 +308,7 @@ struct ArmGen {
       printStackMovement(RegSaveType::Push, func);
 
       for (auto *label : func->labels) {
+        labelInstCounter = 0;
         os << getLabel(label) << ":\n";
         for (auto *inst = label->Head; inst; inst = inst->Next) {
           if (auto *retInst = dyn_cast<AsmReturnInst>(inst)) {
