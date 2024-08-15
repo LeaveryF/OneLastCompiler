@@ -16,6 +16,7 @@
 #include <olc/backend/ArmGen.h>
 #include <olc/backend/ArmWriter.h>
 #include <olc/backend/CodeGen.h>
+#include <olc/backend/CodeWriter.h>
 #include <olc/backend/Liveness.h>
 #include <olc/backend/RegAlloc.h>
 #include <olc/frontend/Visitor.h>
@@ -88,12 +89,18 @@ int main(int argc, const char *argv[]) {
   codegen.run();
   auto *asmMod = codegen.asmModule;
 
+  std::cerr << "============\n";
+  CodeWriter codeWriter{std::cerr};
+  codeWriter.printModule(asmMod);
+
   std::stringstream ss;
   ArmGen armgen{ss, asmMod};
   armgen.run();
 
   std::cerr << ss.str();
   std::cout << ss.str();
+  // ArmGen armgen{std::cerr, asmMod};
+  // armgen.run();
   std::cerr << "============\n";
 
   // LivenessAnalysis liveness;

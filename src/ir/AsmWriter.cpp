@@ -1,7 +1,5 @@
 #include <olc/ir/AsmWriter.h>
 
-#include <map>
-
 namespace olc {
 
 void AssemblyWriter::printModule(Module *module) {

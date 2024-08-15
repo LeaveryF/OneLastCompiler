@@ -6,7 +6,6 @@
 #include <olc/ir/IR.h>
 
 #include <map>
-#include <optional>
 #include <vector>
 
 namespace olc {
@@ -21,7 +20,7 @@ struct CodeGen {
 
   CodeGen(Module *module) : irModule(module), asmModule(new AsmModule{}) {}
 
-  AsmPredicate getAsmPred(Value::Tag tag) {
+  AsmPredicate convertAsmPredTag(Value::Tag tag) {
     switch (tag) {
     case Value::Tag::Lt:
       return AsmPredicate::Lt;
@@ -382,6 +381,20 @@ struct CodeGen {
 
             asmLabel->push_back(asmBinInst);
             valueMap[irGEPInst] = asmBinInst->dst;
+          } else if (auto *irBranchInst = dyn_cast<BranchInst>(irInst)) {
+            // 处理分支指令
+            auto *branchInst = new AsmBranchInst{};
+            auto *cond = dyn_cast<BinaryInst>(irBranchInst->getCondition());
+            branchInst->pred = convertAsmPredTag(cond->tag);
+            branchInst->trueTarget = labelMap.at(irBranchInst->getTrueBlock());
+            branchInst->falseTarget =
+                labelMap.at(irBranchInst->getFalseBlock());
+            asmLabel->push_back(branchInst);
+          } else if (auto *irJumpInst = dyn_cast<JumpInst>(irInst)) {
+            // 处理无条件跳转指令
+            auto *jumpInst = new AsmJumpInst{nullptr};
+            jumpInst->target = labelMap.at(irJumpInst->getTargetBlock());
+            asmLabel->push_back(jumpInst);
           } else {
             olc_unreachable("NYI");
           }
