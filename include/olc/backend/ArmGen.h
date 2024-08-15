@@ -71,6 +71,22 @@ struct ArmGen {
       LinearScan regAlloc;
       regAlloc.runOnFunction(func);
       auto &regMap = regAlloc.regMap;
+      std::map<AsmReg *, int> spillMap;
+
+      for (auto *var : regAlloc.spills) {
+        spillMap[var] = func->stackSize;
+        func->stackSize += 4;
+      }
+
+      auto generateSpillAddress = [](AsmAccess *access, int offset) {
+        if (offset < 4096) {
+          access->addr = PReg::sp();
+          access->offset = new AsmImm{static_cast<uint32_t>(offset)};
+        } else {
+          olc_unreachable("big offset NYI");
+        }
+      };
+
       for (auto *label : func->labels) {
         for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
           for (auto refdef : inst->getDefs()) {
@@ -79,8 +95,17 @@ struct ArmGen {
             if (auto *preg = dyn_cast<PReg>(def)) {
               continue;
             } else if (auto *vreg = dyn_cast<VReg>(def)) {
-              assert(regMap.count(vreg) && "Spill detected, NYI");
-              def = regMap.at(vreg);
+              if (auto it = regMap.find(vreg); it != regMap.end()) {
+                def = it->second;
+              } else if (regAlloc.spills.count(vreg)) {
+                // spill it with str lr
+                def = PReg::lr();
+                int offset = spillMap.at(vreg);
+                auto storeSlotInst = new AsmStoreInst{};
+                generateSpillAddress(storeSlotInst, offset);
+                storeSlotInst->src = def;
+                label->push_after(inst, storeSlotInst);
+              }
             } else {
               olc_unreachable("Invalid asm reg for def");
             }
@@ -89,10 +114,17 @@ struct ArmGen {
           for (auto refuse : inst->getUses()) {
             auto &use = *refuse;
             if (auto *vreg = dyn_cast_if_present<VReg>(use)) {
-              if (regMap.find(vreg) == regMap.end()) {
-                olc_unreachable("Spill detected, NYI");
+              if (auto it = regMap.find(vreg); it != regMap.end()) {
+                use = it->second;
+              } else if (regAlloc.spills.count(vreg)) {
+                // load it with ldr lr
+                use = PReg::lr();
+                int offset = spillMap.at(vreg);
+                auto loadSlotInst = new AsmLoadInst{};
+                generateSpillAddress(loadSlotInst, offset);
+                loadSlotInst->dst = use;
+                label->push_before(inst, loadSlotInst);
               }
-              use = regMap.at(vreg);
             }
           }
         }
@@ -198,15 +230,27 @@ struct ArmGen {
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
             auto reg_dst = cast<PReg>(ldInst->dst);
             auto reg_base = cast<PReg>(ldInst->addr);
-            assert(!ldInst->offset && "offset NYI");
-            printArmInstr(
-                "ldr", {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
+            if (ldInst->offset) {
+              printArmInstr(
+                  "ldr", {reg_dst->abiName(),
+                          "[" + reg_base->abiName() + ", " +
+                              cast<AsmImm>(ldInst->offset)->toAsm() + "]"});
+            } else {
+              printArmInstr(
+                  "ldr", {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
+            }
           } else if (auto *stInst = dyn_cast<AsmStoreInst>(inst)) {
             auto reg_src = cast<PReg>(stInst->src);
             auto reg_base = cast<PReg>(stInst->addr);
-            assert(!stInst->offset && "offset NYI");
-            printArmInstr(
-                "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
+            if (stInst->offset) {
+              printArmInstr(
+                  "str", {reg_src->abiName(),
+                          "[" + reg_base->abiName() + ", " +
+                              cast<AsmImm>(stInst->offset)->toAsm() + "]"});
+            } else {
+              printArmInstr(
+                  "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
+            }
           } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
             printArmInstr("bl", {callInst->callee});
           } else if (auto *brInst = dyn_cast<AsmBranchInst>(inst)) {

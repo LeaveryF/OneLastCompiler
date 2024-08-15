@@ -82,6 +82,8 @@ struct AsmImm : AsmValue {
   AsmImm(uint32_t hexValue) : AsmValue(Tag::Imm), hexValue(hexValue) {}
 
   static bool classof(const AsmValue *v) { return v->tag == Tag::Imm; }
+
+  std::string toAsm() const { return "#" + std::to_string(hexValue); }
 };
 
 struct AsmInst : IListNode<AsmInst> {

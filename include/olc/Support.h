@@ -821,9 +821,6 @@ template <class T> struct IListNode {
   T *Prev = nullptr;
   IList<T> *Owner = nullptr;
 
-  void insert_before(IListNode *Node) { Owner->push_before(Node, this); }
-
-  void insert_after(IListNode *Node) { Owner->push_after(Node, this); }
 
   void remove() { Owner->remove(this); }
 };

@@ -33,6 +33,7 @@ struct LinearScan {
   std::set<LivePair, LivePair::EndAscend> activeIntervals;
   // no entry means spilled out
   std::map<AsmReg *, PReg *> regMap;
+  std::set<AsmReg *> spills;
   std::set<PReg *> freeIntRegs, freeFloatRegs;
 
   void initRegs() {
@@ -110,6 +111,9 @@ struct LinearScan {
       regMap[intv.var] = preg;
       activeIntervals.erase(spill);
       activeIntervals.insert(intv);
+      spills.insert(spill.var);
+    } else {
+      spills.insert(intv.var);
     }
   }
 
