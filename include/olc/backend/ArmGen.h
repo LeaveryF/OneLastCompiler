@@ -50,7 +50,7 @@ struct ArmGen {
   }
 
   void printArmInstr(
-      const std::string &op, const std::vector<std::string> &operands,
+      const std::string &op, const std::vector<std::string> &operands = {},
       AsmPredicate pred = AsmPredicate::Al) {
 
     // indent for instructions
@@ -293,7 +293,7 @@ struct ArmGen {
 
             printRegSaveStore(RegSaveType::Pop, func);
             printArmInstr("bx", {"lr"});
-            // TODO: constant pool ltorg?
+            printArmInstr(".ltorg");
           } else if (auto *movInst = dyn_cast<AsmMoveInst>(inst)) {
             auto reg_dst = cast<PReg>(movInst->dst);
             if (auto *imm = dyn_cast<AsmImm>(movInst->src)) {
@@ -408,6 +408,7 @@ struct ArmGen {
           } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
             // 处理无条件跳转指令
             printArmInstr("b", {getLabel(jmpInst->target)});
+            printArmInstr(".ltorg");
           } else if (auto *ldGlbInst = dyn_cast<AsmLoadGlobalInst>(inst)) {
             // 处理全局变量加载指令
             auto reg_dst = cast<PReg>(ldGlbInst->dst);
