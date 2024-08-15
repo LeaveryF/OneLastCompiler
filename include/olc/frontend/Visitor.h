@@ -543,7 +543,7 @@ public:
       // 创建指令 维护CFG
       curBasicBlock->create<JumpInst>(end);
       curBasicBlock->successors.push_back(end);
-      end->predecessors.push_back(btrue);
+      end->predecessors.push_back(curBasicBlock);
     } else {
       earlyExit = false;
     }
