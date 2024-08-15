@@ -167,25 +167,36 @@ struct CodeGen {
       fnMap[irFunc] = asmFunc;
       asmModule->funcs.push_back(asmFunc);
       auto args = irFunc->args;
-
-      auto &&[argsInIntReg, argsInFloatReg, argsOnStack] =
-          arrangeCallInfo(args);
-      // 声明参数的寄存器 r0-r3 / s0-s15
-      for (unsigned i = 0; i < argsInIntReg.size(); i++) {
-        valueMap[argsInIntReg[i]] = AsmReg::makePReg(AsmType::I32, i);
-      }
-      for (unsigned i = 0; i < argsInFloatReg.size(); i++) {
-        valueMap[argsInFloatReg[i]] = AsmReg::makePReg(AsmType::F32, i);
-      }
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = new AsmLabel{irBB->label};
         labelMap[irBB] = asmLabel;
         asmFunc->labels.push_back(asmLabel);
       }
+      auto asmEntry = labelMap.at(irFunc->getEntryBlock());
 
-      for (auto *irBB : irFunc->basicBlocks) {
-        auto asmLabel = labelMap.at(irBB);
-        if (irBB == irFunc->basicBlocks.front()) {
+      {
+        auto loadPRegToVReg = [&](AsmReg *preg) {
+          auto *vreg = AsmReg::makeVReg(preg->type);
+          auto *asmMovInst = new AsmMoveInst{};
+          asmMovInst->src = preg;
+          asmMovInst->dst = vreg;
+          asmEntry->push_back(asmMovInst);
+          return vreg;
+        };
+
+        auto &&[argsInIntReg, argsInFloatReg, argsOnStack] =
+            arrangeCallInfo(args);
+        for (unsigned i = 0; i < argsInIntReg.size(); i++) {
+          auto *arg = cast<Argument>(argsInIntReg[i]);
+          auto *preg = AsmReg::makePReg(AsmType::I32, i);
+          valueMap[arg] = loadPRegToVReg(preg);
+        }
+        for (unsigned i = 0; i < argsInFloatReg.size(); i++) {
+          auto *arg = cast<Argument>(argsInFloatReg[i]);
+          auto *preg = AsmReg::makePReg(AsmType::F32, i);
+          valueMap[arg] = loadPRegToVReg(preg);
+        }
+        for (auto *rarg : argsOnStack) {
           // 声明参数的栈空间 ldr value, [sp, #(n-i)*4], i = 0..n-1
           int argsOffset = argsOnStack.size() * 4;
           for (const auto &argOnStack : argsOnStack) {
@@ -195,18 +206,22 @@ struct CodeGen {
             spOffsetInst->lhs = AsmReg::sp();
             spOffsetInst->rhs = lowerImm(argsOffset);
             spOffsetInst->dst = reg_tmp;
-            asmLabel->push_back(spOffsetInst);
+            asmEntry->push_back(spOffsetInst);
             valueMap[argOnStack] = reg_tmp;
             // ldr ry, [rx]
             auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
             auto *asmLoadInst = new AsmLoadInst{};
-            asmLoadInst->addr = lowerValue(argOnStack, asmLabel);
+            asmLoadInst->addr = lowerValue(argOnStack, asmEntry);
             asmLoadInst->dst = reg_res;
-            asmLabel->push_back(asmLoadInst);
+            asmEntry->push_back(asmLoadInst);
             valueMap[argOnStack] = reg_res;
             argsOffset -= 4;
           }
         }
+      }
+
+      for (auto *irBB : irFunc->basicBlocks) {
+        auto asmLabel = labelMap.at(irBB);
         for (auto *irInst : irBB->instructions) {
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
