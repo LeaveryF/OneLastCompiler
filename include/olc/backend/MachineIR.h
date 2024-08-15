@@ -227,6 +227,18 @@ struct AsmCallInst : AsmInst {
   std::vector<AsmValue **> getUses() override { return {}; }
 };
 
+/// Load the address of a global variable into a register 
+struct AsmLoadGlobalInst : AsmInst {
+  AsmValue *dst = nullptr;
+  GlobalVariable *var = nullptr;
+
+  AsmLoadGlobalInst() : AsmInst(Tag::LoadGlobal) {}
+  static bool classof(const AsmInst *v) { return v->tag == Tag::LoadGlobal; }
+
+  std::vector<AsmValue **> getDefs() override { return {&dst}; }
+  std::vector<AsmValue **> getUses() override { return {}; }
+};
+
 struct AsmFunc {
   std::string name;
   std::list<AsmLabel *> labels;

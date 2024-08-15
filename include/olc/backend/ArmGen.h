@@ -40,6 +40,15 @@ struct ArmGen {
     }
   }
 
+  uint32_t reinterpretFloat(float x) {
+    union {
+      float f;
+      uint32_t i;
+    } u;
+    u.f = x;
+    return u.i;
+  }
+
   void printArmInstr(
       const std::string &op, const std::vector<std::string> &operands) {
 
@@ -132,10 +141,64 @@ struct ArmGen {
     }
   }
 
+  void printGlobalData(GlobalVariable *global) {
+    if (!global->getInitializer())
+      return;
+
+    os << global->getName() << ":\n";
+    std::function<void(Constant *)> printConstData = [&](Constant *val) {
+      assert(val && "Invalid initializer");
+      if (auto *arr = dyn_cast<ConstantArray>(val)) {
+        for (auto *elt : arr->values) {
+          printConstData(elt);
+        }
+        size_t totalCount = cast<ArrayType>(arr->getType())->getSize();
+        // 不足的部分自动填充0
+        if (totalCount > arr->values.size()) {
+          os << ".zero " << 4 * (totalCount - arr->values.size()) << '\n';
+        }
+        os << ".size " << global->getName() << ", " << totalCount * 4 << '\n';
+      } else if (auto *constVal = dyn_cast<ConstantValue>(val)) {
+        if (constVal->isInt()) {
+          os << ".word " << constVal->getInt() << '\n';
+        } else {
+          os << ".word " << reinterpretFloat(constVal->getFloat()) << '\n';
+        }
+      } else {
+        olc_unreachable("NYI");
+      }
+    };
+    printConstData(global->getInitializer());
+  }
+
+  void printGlobalBss(GlobalVariable *global) {
+    if (global->getInitializer()) {
+      return;
+    }
+    os << global->getName() << ":\n";
+    unsigned size = 4;
+    if (auto *arrTy = dyn_cast<ArrayType>(global->getAllocatedType())) {
+      assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+      size = 4 * arrTy->getSize();
+    }
+    os << ".skip " << size << '\n';
+  }
+
   void run() {
     runRegAlloc();
-    
+
     os << ".arch armv7ve\n";
+
+    os << ".data\n";
+    for (auto &global : module->globals) {
+      printGlobalData(global);
+    }
+
+    os << ".bss\n";
+    for (auto &global : module->globals) {
+      printGlobalBss(global);
+    }
+
     os << ".text\n";
     for (auto *func : module->funcs) {
       os << ".global " << func->name << "\n";
@@ -270,6 +333,11 @@ struct ArmGen {
           } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
             // 处理无条件跳转指令
             printArmInstr("b", {getLabel(jmpInst->target)});
+          } else if (auto *ldGlbInst = dyn_cast<AsmLoadGlobalInst>(inst)) {
+            // 处理全局变量加载指令
+            auto reg_dst = cast<PReg>(ldGlbInst->dst);
+            printArmInstr(
+                "ldr", {reg_dst->abiName(), "=" + ldGlbInst->var->getName()});
           } else {
             olc_unreachable("NYI");
           }

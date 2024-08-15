@@ -84,8 +84,11 @@ struct CodeGen {
         olc_unreachable("float NYI");
       }
     } else if (auto *irGlobal = dyn_cast<GlobalVariable>(value)) {
-      // label->create<LoadGlobalAddr>
-      olc_unreachable("global NYI");
+      auto *ldGlbInst = new AsmLoadGlobalInst{};
+      ldGlbInst->dst = AsmReg::makeVReg(AsmType::I32);
+      ldGlbInst->var = irGlobal;
+      label->push_back(ldGlbInst);
+      return ldGlbInst->dst;
     } else {
       return valueMap.at(value);
     }
@@ -134,6 +137,10 @@ struct CodeGen {
   }
 
   void run() {
+    for (auto *irGlobal : irModule->globals) {
+      asmModule->globals.push_back(irGlobal);
+    }
+
     for (auto *irFunc : irModule->functions) {
       auto asmFunc = new AsmFunc{irFunc->fnName};
       asmFunc->isBuiltin = irFunc->isBuiltin;
