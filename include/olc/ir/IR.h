@@ -279,7 +279,11 @@ struct ReturnInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
 
-  Value *getReturnValue() const { return getOperand(0); }
+  Value *getReturnValue() const {
+    if (getNumOperands() > 0)
+      return getOperand(0);
+    return nullptr;
+  }
 };
 
 struct AllocaInst : Instruction {
