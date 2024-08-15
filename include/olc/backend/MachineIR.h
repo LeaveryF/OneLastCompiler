@@ -208,6 +208,7 @@ struct AsmStoreInst : AsmAccess {
 
 struct AsmMoveInst : AsmInst {
   AsmValue *src = nullptr, *dst = nullptr;
+  AsmPredicate pred = AsmPredicate::Al;
   // TODO: shift
 
   AsmMoveInst() : AsmInst(Tag::Move) {}

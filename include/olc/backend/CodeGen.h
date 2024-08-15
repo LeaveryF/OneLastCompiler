@@ -40,6 +40,25 @@ struct CodeGen {
     }
   }
 
+  AsmPredicate getNotAsmPred(AsmPredicate pred) {
+    switch (pred) {
+    case AsmPredicate::Lt:
+      return AsmPredicate::Ge;
+    case AsmPredicate::Le:
+      return AsmPredicate::Gt;
+    case AsmPredicate::Gt:
+      return AsmPredicate::Le;
+    case AsmPredicate::Ge:
+      return AsmPredicate::Lt;
+    case AsmPredicate::Eq:
+      return AsmPredicate::Ne;
+    case AsmPredicate::Ne:
+      return AsmPredicate::Eq;
+    default:
+      olc_unreachable("invalid pred");
+    }
+  }
+
   AsmType convertType(Type *type) {
     if (type->isFloatTy()) {
       return AsmType::F32;
@@ -194,8 +213,24 @@ struct CodeGen {
               bool allUseIsBr = std::all_of(
                   irBinInst->uses.begin(), irBinInst->uses.end(),
                   [&](Use const &use) { return isa<BranchInst>(use.user); });
-              assert(
-                  allUseIsBr && "NYI, Cmp result can only be used by branch");
+              if (!allUseIsBr) {
+                auto *dst = AsmReg::makeVReg(AsmType::I32);
+
+                // mov#cond r0, 1
+                auto *asmMovTrue = new AsmMoveInst{};
+                asmMovTrue->src = lowerImm(1);
+                asmMovTrue->dst = dst;
+                asmMovTrue->pred = getAsmPred(irBinInst->tag);
+                asmLabel->push_back(asmMovTrue);
+                // mov#cond r0, 0
+                auto *asmMovFalse = new AsmMoveInst{};
+                asmMovFalse->src = lowerImm(0);
+                asmMovFalse->dst = dst;
+                asmMovFalse->pred = getNotAsmPred(getAsmPred(irBinInst->tag));
+                asmLabel->push_back(asmMovFalse);
+
+                valueMap[irBinInst] = asmMovTrue->dst;
+              }
             } else {
               auto *asmBinInst = new AsmBinaryInst{opTag};
               // TODO: optimize with immediates
