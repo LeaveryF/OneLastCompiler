@@ -31,7 +31,7 @@ void CodeWriter::printFunc(AsmFunc *func) {
 
 void CodeWriter::printLabel(AsmLabel *label) {
   os << label->name << ":\n";
-  for (auto &inst = label->Head; inst != nullptr; inst = inst->Next) {
+  for (auto inst = label->Head; inst != nullptr; inst = inst->Next) {
     printInst(inst);
   }
 }
