@@ -202,8 +202,10 @@ struct CodeGen {
           valueMap[arg] = loadPRegToVReg(preg);
         }
         for (auto *rarg : argsOnStack) {
-          // 声明参数的栈空间 ldr value, [sp, #(n-i)*4], i = 0..n-1
-          int argsOffset = argsOnStack.size() * 4;
+          // 声明参数的栈空间
+          // 这里先使用 sp, (i-4)*4，等 stackSize 与 pushSize 固定后
+          // 将其替换为 sp, stackSize + pushSize + (i-4)*4
+          int argsOffset = 0;
           for (const auto &argOnStack : argsOnStack) {
             // add rx, sp, (n-i)*4
             auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
@@ -212,15 +214,16 @@ struct CodeGen {
             spOffsetInst->rhs = lowerImm(argsOffset);
             spOffsetInst->dst = reg_tmp;
             asmEntry->push_back(spOffsetInst);
-            valueMap[argOnStack] = reg_tmp;
+            // 保存以备后续替换计算真实偏移
+            asmFunc->stackArgOffsets.push_back(spOffsetInst);
             // ldr ry, [rx]
             auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
             auto *asmLoadInst = new AsmLoadInst{};
-            asmLoadInst->addr = lowerValue(argOnStack, asmEntry);
+            asmLoadInst->addr = reg_tmp;
             asmLoadInst->dst = reg_res;
             asmEntry->push_back(asmLoadInst);
             valueMap[argOnStack] = reg_res;
-            argsOffset -= 4;
+            argsOffset += 4;
           }
         }
       }
@@ -262,7 +265,8 @@ struct CodeGen {
                 auto *asmMovFalse = new AsmMoveInst{};
                 asmMovFalse->src = lowerImm(0);
                 asmMovFalse->dst = dst;
-                asmMovFalse->pred = getNotAsmPred(convertAsmPredTag(irBinInst->tag));
+                asmMovFalse->pred =
+                    getNotAsmPred(convertAsmPredTag(irBinInst->tag));
                 asmLabel->push_back(asmMovFalse);
 
                 valueMap[irBinInst] = asmMovTrue->dst;
@@ -322,13 +326,14 @@ struct CodeGen {
               asmCallInst->callUses.insert(preg);
               asmLabel->push_back(asmMovInst);
             }
-            // 栈传参 str value, [sp, #-(stacksize+i*4)]
+            // 栈传参，倒序压栈
+            int totalArgsSpace = argsOnStack.size() * 4;
             int argsOffset = 0;
             for (const auto &argOnStack : argsOnStack) {
-              // sub rx, sp, i*4
+              // sub rx, sp, (n-i)*4
               auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Sub};
               spOffsetInst->lhs = AsmReg::sp();
-              spOffsetInst->rhs = lowerImm(asmFunc->stackSize + argsOffset);
+              spOffsetInst->rhs = lowerImm(totalArgsSpace - argsOffset);
               spOffsetInst->dst =
                   AsmReg::makeVReg(convertType(argOnStack->getType()));
               asmLabel->push_back(spOffsetInst);
@@ -339,20 +344,26 @@ struct CodeGen {
               asmLabel->push_back(asmStoreInst);
               argsOffset += 4;
             }
-            // sub sp, sp, (n-4)*4
-            auto *subInst = new AsmBinaryInst{AsmInst::Tag::Sub};
-            subInst->lhs = AsmReg::sp();
-            subInst->rhs = lowerImm(argsOffset);
-            subInst->dst = AsmReg::sp();
-            asmLabel->push_back(subInst);
+            if (totalArgsSpace != 0) {
+              assert(argsOffset > 0);
+              // sub sp, sp, (n-4)*4
+              auto *subInst = new AsmBinaryInst{AsmInst::Tag::Sub};
+              subInst->lhs = AsmReg::sp();
+              subInst->rhs = lowerImm(argsOffset);
+              subInst->dst = AsmReg::sp();
+              asmLabel->push_back(subInst);
+            }
             // bl func
             asmLabel->push_back(asmCallInst);
-            // add sp, sp, (n-4)*4
-            auto *addInst = new AsmBinaryInst{AsmInst::Tag::Add};
-            addInst->lhs = AsmReg::sp();
-            addInst->rhs = lowerImm(argsOffset);
-            addInst->dst = AsmReg::sp();
-            asmLabel->push_back(addInst);
+            if (totalArgsSpace != 0) {
+              assert(argsOffset > 0);
+              // add sp, sp, (n-4)*4
+              auto *addInst = new AsmBinaryInst{AsmInst::Tag::Add};
+              addInst->lhs = AsmReg::sp();
+              addInst->rhs = lowerImm(argsOffset);
+              addInst->dst = AsmReg::sp();
+              asmLabel->push_back(addInst);
+            }
             // 返回值 mov value, r0 / s0
             if (!irCallInst->getType()->isVoidTy()) {
               auto *preg =

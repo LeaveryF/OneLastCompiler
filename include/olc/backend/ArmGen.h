@@ -174,6 +174,8 @@ struct ArmGen {
       if (func->isBuiltin)
         continue;
 
+      // 1. scan used callee saved regs list
+
       auto processReg = [&](AsmValue *reg) {
         auto *preg = dyn_cast_if_present<PReg>(reg);
         if (!preg)
@@ -190,6 +192,14 @@ struct ArmGen {
           for (auto *refuse : inst->getUses())
             processReg(*refuse);
         }
+      }
+
+      // 2. replace stack arg offsets
+      const int pushSize = 4 + 4 * func->usedCalleeSavedRegs.size();
+
+      for (auto *offsetInst : func->stackArgOffsets) {
+        auto *offsetImm = cast<AsmImm>(offsetInst->rhs);
+        offsetImm->hexValue += func->stackSize + pushSize;
       }
     }
   }
