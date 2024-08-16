@@ -104,18 +104,28 @@ struct CodeGen {
   AsmValue *lowerImm(float value, AsmLabel *label) {
     bool useReg = method == AsmImm::AlwaysReg || !AsmImm::match<method>(value);
     if (useReg) {
-      return loadImmToReg(new AsmImm{AsmImm::getBitRepr(value)}, label, AsmType::F32);
+      return loadImmToReg(
+          new AsmImm{AsmImm::getBitRepr(value)}, label, AsmType::F32);
     } else {
       return new AsmImm{AsmImm::getBitRepr(value)};
     }
   }
 
-  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label, AsmType type = AsmType::I32) {
-    auto asmReg = AsmReg::makeVReg(type);
+  AsmReg *
+  loadImmToReg(AsmImm *imm, AsmLabel *label, AsmType type = AsmType::I32) {
+    auto asmReg = AsmReg::makeVReg(AsmType::I32);
     auto *asmMovInst = new AsmMoveInst{};
     asmMovInst->src = imm;
     asmMovInst->dst = asmReg;
     label->push_back(asmMovInst);
+    if (type == AsmType::F32) {
+      auto asmRegF = AsmReg::makeVReg(AsmType::F32);
+      auto *asmMovInstF = new AsmMoveInst{};
+      asmMovInstF->src = asmReg;
+      asmMovInstF->dst = asmRegF;
+      label->push_back(asmMovInstF);
+      return asmRegF;
+    }
     return asmReg;
   }
 
@@ -311,7 +321,7 @@ struct CodeGen {
             valueMap[irLoadInst] = reg_res;
             asmLabel->push_back(asmLoadInst);
           } else if (auto *irStoreInst = dyn_cast<StoreInst>(irInst)) {
-            // TODO: 
+            // TODO:
             auto reg_src = lowerValue(irStoreInst->getValue(), asmLabel);
             auto *asmStoreInst = new AsmStoreInst{};
             asmStoreInst->addr = lowerValue<AsmImm::Imm12bit>(

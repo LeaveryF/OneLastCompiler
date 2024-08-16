@@ -24,9 +24,9 @@ struct ArmGen {
   static constexpr size_t kMaxInstInLabel = 1000;
 
   std::unordered_map<std::string, std::string> i2fOpCode{
-      {"add", "vadd.f32"}, {"sub", "vsub.f32"}, {"mul", "vmul.f32"},
-      {"div", "vdiv.f32"}, {"cmp", "vcmp.f32"}, {"mov", "vmov.f32"},
-      {"ldr", "vldr.32"},  {"str", "vstr.32"},
+      {"add", "vadd.f32"},  {"sub", "vsub.f32"}, {"mul", "vmul.f32"},
+      {"sdiv", "vdiv.f32"}, {"cmp", "vcmp.f32"}, {"mov", "vmov.f32"},
+      {"ldr", "vldr.32"},   {"str", "vstr.32"},
   };
 
   ArmGen(std::ostream &os, AsmModule *module) : os(os), module(module) {}
@@ -385,8 +385,14 @@ struct ArmGen {
                     "movt", {reg_dst->abiName(), std::to_string(u.hi)},
                     movInst->pred);
             } else if (auto *reg = dyn_cast<PReg>(movInst->src)) {
+              std::string op;
+              if (reg_dst->type == AsmType::F32) {
+                op = "vmov.f32";
+              } else {
+                op = "mov";
+              }
               printArmInstr(
-                  "mov", {reg_dst->abiName(), reg->abiName()}, movInst->pred);
+                  op, {reg_dst->abiName(), reg->abiName()}, movInst->pred);
             } else {
               olc_unreachable("NYI");
             }
@@ -403,20 +409,20 @@ struct ArmGen {
               op = "mul";
               break;
             case AsmInst::Tag::Div:
-              // op = "sdiv";
               // if (cast<PReg>(binInst->dst)->type == AsmType::F32) {
               //   op = "vdiv.f32";
+              // } else {
+              //   op = "sdiv";
               // }
-              if (cast<PReg>(binInst->dst)->type == AsmType::F32) {
-                op = "vdiv.f32";
-              } else {
-                op = "sdiv";
-              }
+              op = "sdiv";
               break;
             case AsmInst::Tag::Mod:
               olc_unreachable("Should not produce MOD in IR");
             default:
               olc_unreachable("Unknown");
+            }
+            if (cast<PReg>(binInst->dst)->type == AsmType::F32) {
+              op = i2fOpCode[op];
             }
             auto reg_dst = cast<PReg>(binInst->dst);
             auto reg_lhs = cast<PReg>(binInst->lhs);
@@ -436,26 +442,38 @@ struct ArmGen {
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
             auto reg_dst = cast<PReg>(ldInst->dst);
             auto reg_base = cast<PReg>(ldInst->addr);
+            std::string op;
+            if (reg_dst->type == AsmType::F32) {
+              op = "vldr.32";
+            } else {
+              op = "ldr";
+            }
             if (ldInst->offset) {
               printArmInstr(
-                  "ldr", {reg_dst->abiName(),
-                          "[" + reg_base->abiName() + ", " +
-                              cast<AsmImm>(ldInst->offset)->toAsm() + "]"});
+                  op, {reg_dst->abiName(),
+                       "[" + reg_base->abiName() + ", " +
+                           cast<AsmImm>(ldInst->offset)->toAsm() + "]"});
             } else {
               printArmInstr(
-                  "ldr", {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
+                  op, {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
             }
           } else if (auto *stInst = dyn_cast<AsmStoreInst>(inst)) {
             auto reg_src = cast<PReg>(stInst->src);
             auto reg_base = cast<PReg>(stInst->addr);
+            std::string op;
+            if (reg_src->type == AsmType::F32) {
+              op = "vstr.32";
+            } else {
+              op = "str";
+            }
             if (stInst->offset) {
               printArmInstr(
-                  "str", {reg_src->abiName(),
-                          "[" + reg_base->abiName() + ", " +
-                              cast<AsmImm>(stInst->offset)->toAsm() + "]"});
+                  op, {reg_src->abiName(),
+                       "[" + reg_base->abiName() + ", " +
+                           cast<AsmImm>(stInst->offset)->toAsm() + "]"});
             } else {
               printArmInstr(
-                  "str", {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
+                  op, {reg_src->abiName(), "[" + reg_base->abiName() + "]"});
             }
           } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
             printArmInstr("bl", {callInst->callee});
@@ -472,6 +490,12 @@ struct ArmGen {
           } else if (auto *cmpInst = dyn_cast<AsmCompareInst>(inst)) {
             // 处理比较指令
             auto reg_lhs = cast<PReg>(cmpInst->lhs);
+            std::string op;
+            if (reg_lhs->type == AsmType::F32) {
+              op = "vcmp.f32";
+            } else {
+              op = "cmp";
+            }
             if (auto reg_rhs = dyn_cast<PReg>(cmpInst->rhs))
               printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
             else if (auto *imm_rhs = dyn_cast<AsmImm>(cmpInst->rhs)) {
