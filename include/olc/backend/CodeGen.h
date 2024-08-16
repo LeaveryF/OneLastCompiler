@@ -100,8 +100,18 @@ struct CodeGen {
     }
   }
 
-  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label) {
-    auto asmReg = AsmReg::makeVReg(AsmType::I32);
+  template <AsmImm::LoadMethod method = AsmImm::AlwaysReg>
+  AsmValue *lowerImm(float value, AsmLabel *label) {
+    bool useReg = method == AsmImm::AlwaysReg || !AsmImm::match<method>(value);
+    if (useReg) {
+      return loadImmToReg(new AsmImm{AsmImm::getBitRepr(value)}, label, AsmType::F32);
+    } else {
+      return new AsmImm{AsmImm::getBitRepr(value)};
+    }
+  }
+
+  AsmReg *loadImmToReg(AsmImm *imm, AsmLabel *label, AsmType type = AsmType::I32) {
+    auto asmReg = AsmReg::makeVReg(type);
     auto *asmMovInst = new AsmMoveInst{};
     asmMovInst->src = imm;
     asmMovInst->dst = asmReg;
@@ -115,7 +125,7 @@ struct CodeGen {
       if (irConst->isInt()) {
         return lowerImm<method>(irConst->getInt(), label);
       } else {
-        olc_unreachable("float NYI");
+        return lowerImm<method>(irConst->getFloat(), label);
       }
     } else if (auto *irGlobal = dyn_cast<GlobalVariable>(value)) {
       auto *ldGlbInst = new AsmLoadGlobalInst{};
@@ -224,6 +234,8 @@ struct CodeGen {
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = labelMap.at(irBB);
         for (auto *irInst : irBB->instructions) {
+          // for debug
+          auto tag = irInst->tag;
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
               // mov r0 / s0, value
@@ -299,6 +311,7 @@ struct CodeGen {
             valueMap[irLoadInst] = reg_res;
             asmLabel->push_back(asmLoadInst);
           } else if (auto *irStoreInst = dyn_cast<StoreInst>(irInst)) {
+            // TODO: 
             auto reg_src = lowerValue(irStoreInst->getValue(), asmLabel);
             auto *asmStoreInst = new AsmStoreInst{};
             asmStoreInst->addr = lowerValue<AsmImm::Imm12bit>(
@@ -401,7 +414,7 @@ struct CodeGen {
                   AsmImm::match<AsmImm::Operand2>(offsetx4))
                 asmBinInst->rhs = new AsmImm{offsetx4};
               else
-                asmBinInst->rhs = lowerImm(immOffset->hexValue, asmLabel);
+                asmBinInst->rhs = lowerImm((int)immOffset->hexValue, asmLabel);
             } else {
               asmBinInst->rhs = offset;
             }

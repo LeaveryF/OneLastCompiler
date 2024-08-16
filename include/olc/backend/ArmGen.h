@@ -23,6 +23,12 @@ struct ArmGen {
   size_t labelSplitCounter = 0;
   static constexpr size_t kMaxInstInLabel = 1000;
 
+  std::unordered_map<std::string, std::string> i2fOpCode{
+      {"add", "vadd.f32"}, {"sub", "vsub.f32"}, {"mul", "vmul.f32"},
+      {"div", "vdiv.f32"}, {"cmp", "vcmp.f32"}, {"mov", "vmov.f32"},
+      {"ldr", "vldr.32"},  {"str", "vstr.32"},
+  };
+
   ArmGen(std::ostream &os, AsmModule *module) : os(os), module(module) {}
 
   std::string getCondStr(AsmPredicate pred) {
