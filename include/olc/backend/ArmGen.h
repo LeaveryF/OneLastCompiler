@@ -109,18 +109,53 @@ struct ArmGen {
 
   /// Print push or pop { ...calleeSavedRegs, lr }
   void printRegSaveStore(RegSaveType type, AsmFunc *func) {
-    std::string regs;
-    for (auto *reg : func->usedCalleeSavedRegs) {
-      if (!regs.empty())
-        regs += ", ";
-      regs += reg->abiName();
+    std::set<PReg *> pushIntRegs, vpushFloatRegs;
+
+    for (auto *preg : func->usedCalleeSavedRegs) {
+      if (preg->type == AsmType::I32) {
+        pushIntRegs.insert(preg);
+      } else {
+        vpushFloatRegs.insert(preg);
+      }
     }
-    // always save lr
-    if (!regs.empty())
-      regs += ", ";
-    regs += PReg::lr()->abiName();
-    printArmInstr(
-        type == RegSaveType::Push ? "push" : "pop", {"{" + regs + "}"});
+
+    auto emitPushPop = [&] {
+      std::string pushRegList;
+      for (auto *reg : pushIntRegs) {
+        if (!pushRegList.empty())
+          pushRegList += ", ";
+        pushRegList += reg->abiName();
+      }
+      // always save lr
+      if (!pushRegList.empty())
+        pushRegList += ", ";
+      pushRegList += PReg::lr()->abiName();
+      printArmInstr(
+          type == RegSaveType::Push ? "push" : "pop",
+          {"{" + pushRegList + "}"});
+    };
+
+    auto emitVPushVPop = [&] {
+      if (!vpushFloatRegs.empty()) {
+        std::string pushRegList;
+        for (auto *reg : vpushFloatRegs) {
+          if (!pushRegList.empty())
+            pushRegList += ", ";
+          pushRegList += reg->abiName();
+        }
+        printArmInstr(
+            type == RegSaveType::Push ? "vpush" : "vpop",
+            {"{" + pushRegList + "}"});
+      }
+    };
+
+    if (type == RegSaveType::Push) {
+      emitPushPop();
+      emitVPushVPop();
+    } else {
+      emitVPushVPop();
+      emitPushPop();
+    }
   }
 
   std::string getLabel(AsmLabel *label) {
@@ -258,7 +293,7 @@ struct ArmGen {
           }
         } else {
           if (preg->id >= 16 && preg->id <= 31) {
-            olc_unreachable("float save NYI");
+            // olc_unreachable("float save NYI");
             func->usedCalleeSavedRegs.insert(preg);
           }
         }
