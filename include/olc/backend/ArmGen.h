@@ -519,6 +519,9 @@ struct ArmGen {
             case AsmInst::Tag::Lsr:
               op = "lsr";
               break;
+            case AsmInst::Tag::Asr:
+              op = "asr";
+              break;
             case AsmInst::Tag::Rsb:
               op = "rsb";
               break;
