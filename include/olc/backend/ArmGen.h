@@ -404,6 +404,8 @@ struct ArmGen {
           } else if (auto *movInst = dyn_cast<AsmMoveInst>(inst)) {
             auto reg_dst = cast<PReg>(movInst->dst);
             if (auto *imm = dyn_cast<AsmImm>(movInst->src)) {
+              assert(
+                  reg_dst->type == AsmType::I32 && "F32 should load from IReg");
               union {
                 uint32_t i;
                 struct {
@@ -421,7 +423,7 @@ struct ArmGen {
                     movInst->pred);
             } else if (auto *reg = dyn_cast<PReg>(movInst->src)) {
               std::string op;
-              if (reg_dst->type == AsmType::F32) {
+              if (reg_dst->type == AsmType::F32 || reg->type == AsmType::F32) {
                 op = "vmov.f32";
               } else {
                 op = "mov";

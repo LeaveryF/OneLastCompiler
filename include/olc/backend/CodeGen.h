@@ -102,13 +102,9 @@ struct CodeGen {
 
   template <AsmImm::LoadMethod method = AsmImm::AlwaysReg>
   AsmValue *lowerImm(float value, AsmLabel *label) {
-    bool useReg = method == AsmImm::AlwaysReg || !AsmImm::match<method>(value);
-    if (useReg) {
-      return loadImmToReg(
-          new AsmImm{AsmImm::getBitRepr(value)}, label, AsmType::F32);
-    } else {
-      return new AsmImm{AsmImm::getBitRepr(value)};
-    }
+    // float should always use register
+    return loadImmToReg(
+        new AsmImm{AsmImm::getBitRepr(value)}, label, AsmType::F32);
   }
 
   AsmReg *
@@ -464,8 +460,8 @@ struct CodeGen {
             auto freg = lowerValue(f2iInst->getFloatValue(), asmLabel);
             auto ireg = AsmReg::makeVReg(AsmType::I32);
             auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::f2i};
-            asmCvtInst->src = ireg;
-            asmCvtInst->dst = ireg;
+            asmCvtInst->src = freg;
+            asmCvtInst->dst = freg;
             asmLabel->push_back(asmCvtInst);
             auto *asmMovInst = new AsmMoveInst{};
             asmMovInst->src = freg;
