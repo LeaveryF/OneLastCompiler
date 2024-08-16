@@ -328,7 +328,7 @@ struct AsmFunc {
   // other states
   int stackSize = 0;
   std::set<PReg *> usedCalleeSavedRegs;
-  std::vector<AsmBinaryInst *> stackArgOffsets;
+  std::vector<AsmMoveInst *> stackArgOffsets;
 
   AsmFunc(std::string const &name) : name(name) {}
 };

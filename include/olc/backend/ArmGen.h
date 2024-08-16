@@ -273,7 +273,7 @@ struct ArmGen {
       }
 
       for (auto *offsetInst : func->stackArgOffsets) {
-        auto *offsetImm = cast<AsmImm>(offsetInst->rhs);
+        auto *offsetImm = cast<AsmImm>(offsetInst->src);
         offsetImm->hexValue += func->stackSize + pushSize;
       }
     }
@@ -322,6 +322,13 @@ struct ArmGen {
     os << ".skip " << size << '\n';
   }
 
+  bool isEqualAsmValue(AsmValue *lhs, AsmValue *rhs) {
+    if (isa<AsmImm>(lhs)) {
+      return AsmImm::isEqual(lhs, rhs);
+    }
+    return lhs == rhs;
+  }
+
   void peepHole() {
     for (auto *func : module->funcs) {
       if (func->isBuiltin)
@@ -337,7 +344,7 @@ struct ArmGen {
               if (auto *stInst = dyn_cast<AsmStoreInst>(inst->Prev)) {
                 if (stInst->src == ldInst->dst &&
                     stInst->addr == ldInst->addr &&
-                    AsmImm::isEqual(stInst->offset, ldInst->offset)) {
+                    isEqualAsmValue(stInst->offset, ldInst->offset)) {
                   label->remove(ldInst);
                 }
               }
@@ -347,7 +354,7 @@ struct ArmGen {
               if (auto *ldInst = dyn_cast<AsmLoadInst>(inst->Prev)) {
                 if (ldInst->dst == stInst->src &&
                     ldInst->addr == stInst->addr &&
-                    AsmImm::isEqual(ldInst->offset, stInst->offset)) {
+                    isEqualAsmValue(ldInst->offset, stInst->offset)) {
                   label->remove(stInst);
                 }
               }

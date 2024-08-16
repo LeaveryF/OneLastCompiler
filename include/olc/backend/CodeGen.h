@@ -219,17 +219,17 @@ struct CodeGen {
         for (const auto &argOnStack : argsOnStack) {
           // add rx, sp, (n-i)*4
           auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
-          auto *spOffsetInst = new AsmBinaryInst{AsmInst::Tag::Add};
-          spOffsetInst->lhs = AsmReg::sp();
-          spOffsetInst->rhs = lowerImm<AsmImm::Operand2>(argsOffset, asmEntry);
+          auto *spOffsetInst = new AsmMoveInst{};
+          spOffsetInst->src = lowerImm<AsmImm::Imm32bit>(argsOffset, asmEntry);
           spOffsetInst->dst = reg_tmp;
           asmEntry->push_back(spOffsetInst);
           // 保存以备后续替换计算真实偏移
           asmFunc->stackArgOffsets.push_back(spOffsetInst);
-          // ldr ry, [rx]
+          // ldr reg_res, [sp, reg_tmp]
           auto reg_res = AsmReg::makeVReg(convertType(argOnStack->getType()));
           auto *asmLoadInst = new AsmLoadInst{};
-          asmLoadInst->addr = reg_tmp;
+          asmLoadInst->addr = PReg::sp();
+          asmLoadInst->offset = reg_tmp;
           asmLoadInst->dst = reg_res;
           asmEntry->push_back(asmLoadInst);
           valueMap[argOnStack] = reg_res;

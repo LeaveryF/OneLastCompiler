@@ -166,15 +166,15 @@ struct LinearScan {
         regMap[intv.var] = preg;
         activeIntervals.erase(spill);
         activeIntervals.insert(intv);
-        std::cerr << "Spilled "
-                  << (spill.var->type == AsmType::F32 ? "VF" : "VI")
-                  << spill.var->id << " to stack\n";
+        // std::cerr << "Spilled "
+        //           << (spill.var->type == AsmType::F32 ? "VF" : "VI")
+        //           << spill.var->id << " to stack\n";
         spills.insert(spill.var);
         return;
       }
     }
-    std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
-              << intv.var->id << " to stack\n";
+    // std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+    //           << intv.var->id << " to stack\n";
     spills.insert(intv.var);
   }
 
@@ -205,10 +205,10 @@ struct LinearScan {
     auto &pool = intv.var->type == AsmType::F32 ? freeFloatRegs : freeIntRegs;
 
     if (auto *preg = allocateFromPool(pool)) {
-      std::cerr << "Allocated "
-                << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
-                << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
-                << intv.var->id << '\n';
+      // std::cerr << "Allocated "
+      //           << (intv.var->type == AsmType::F32 ? "PF" : "PI") << preg->id
+      //           << " to " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+      //           << intv.var->id << '\n';
       regMap[intv.var] = preg;
     } else
       return false;
