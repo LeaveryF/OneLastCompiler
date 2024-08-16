@@ -357,8 +357,7 @@ struct CodeGen {
               spOffsetInst->lhs = AsmReg::sp();
               spOffsetInst->rhs = lowerImm<AsmImm::Operand2>(
                   totalArgsSpace - argsOffset, asmLabel);
-              spOffsetInst->dst =
-                  AsmReg::makeVReg(convertType(argOnStack->getType()));
+              spOffsetInst->dst = AsmReg::makeVReg(AsmType::I32);
               asmLabel->push_back(spOffsetInst);
               // str value, [rx]
               auto *asmStoreInst = new AsmStoreInst{};
