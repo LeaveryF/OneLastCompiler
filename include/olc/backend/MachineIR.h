@@ -100,6 +100,16 @@ struct AsmImm : AsmValue {
 
   std::string toAsm() const { return "#" + std::to_string(hexValue); }
 
+  static bool isEqual(AsmValue *rlhs, AsmValue *rrhs) {
+    auto *lhs = cast_if_present<AsmImm>(rlhs);
+    auto *rhs = cast_if_present<AsmImm>(rrhs);
+    if (lhs == rhs)
+      return true;
+    if (!lhs || !rhs)
+      return false;
+    return lhs->hexValue == rhs->hexValue;
+  }
+
   enum LoadMethod {
     Operand2,
     Imm8bitx4,

@@ -303,7 +303,8 @@ struct ArmGen {
             if (inst->Prev) {
               if (auto *stInst = dyn_cast<AsmStoreInst>(inst->Prev)) {
                 if (stInst->src == ldInst->dst &&
-                    stInst->addr == ldInst->addr) {
+                    stInst->addr == ldInst->addr &&
+                    AsmImm::isEqual(stInst->offset, ldInst->offset)) {
                   label->remove(ldInst);
                 }
               }
@@ -312,7 +313,8 @@ struct ArmGen {
             if (inst->Prev) {
               if (auto *ldInst = dyn_cast<AsmLoadInst>(inst->Prev)) {
                 if (ldInst->dst == stInst->src &&
-                    ldInst->addr == stInst->addr) {
+                    ldInst->addr == stInst->addr &&
+                    AsmImm::isEqual(ldInst->offset, stInst->offset)) {
                   label->remove(stInst);
                 }
               }
