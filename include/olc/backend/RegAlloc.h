@@ -43,8 +43,7 @@ struct LinearScan {
   std::set<PReg *> freeIntRegs, freeFloatRegs;
 
   void initRegs() {
-    // 13 or 12: whether or not use r12(ip) as a spill temp reg
-    for (int i = 0; i < 12; i++)
+    for (int i = 0; i < 13; i++)
       freeIntRegs.emplace(AsmReg::makePReg(AsmType::I32, i));
     for (int i = 0; i < 32; i++)
       freeFloatRegs.emplace(AsmReg::makePReg(AsmType::F32, i));
