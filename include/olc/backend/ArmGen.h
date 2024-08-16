@@ -134,77 +134,105 @@ struct ArmGen {
     for (auto *func : module->funcs) {
       if (func->isBuiltin)
         continue;
-      LinearScan regAlloc;
-      regAlloc.runOnFunction(func);
-      auto &regMap = regAlloc.regMap;
-      std::map<AsmReg *, int> spillMap;
-
-      for (auto *var : regAlloc.spills) {
-        spillMap[var] = func->stackSize;
-        func->stackSize += 4;
-      }
-
-      auto generateSpillAddress = [](AsmAccess *access, int offset) {
-        if (offset < 4096) {
-          access->addr = PReg::sp();
-          access->offset = new AsmImm{static_cast<uint32_t>(offset)};
-        } else {
-          olc_unreachable("big offset NYI");
+      bool allocDone = false;
+      while (!allocDone) {
+        // 1. Run reg alloc on the func
+        LinearScan regAlloc;
+        regAlloc.runOnFunction(func);
+        auto &regMap = regAlloc.regMap;
+        std::map<AsmReg *, int> spillMap;
+        for (auto *var : regAlloc.spills) {
+          spillMap[var] = func->stackSize;
+          func->stackSize += 4;
         }
-      };
+        allocDone = spillMap.empty();
 
-      for (auto *label : func->labels) {
-        for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
-          // TODO: Use iterative algo to handle spill temp reg
+        auto generateSpillAddress = [](AsmAccess *access, int offset,
+                                       AsmLabel *label) {
+          access->addr = PReg::sp();
+          if (AsmImm::match<AsmImm::Imm12bit>(offset)) {
+            access->offset = new AsmImm{AsmImm::getBitRepr(offset)};
+          } else {
+            auto *imm = new AsmImm{AsmImm::getBitRepr(offset)};
+            auto *mov = new AsmMoveInst{};
+            mov->dst = VReg::makeVReg(AsmType::I32);
+            mov->src = imm;
+            access->offset = mov->dst;
+            label->push_before(access, mov);
+          }
+        };
 
-          // We only have 1 temp reg: lr. If > 1 def or use is spilled for an
-          // instruction, we cannot handle it.
-          int cntSpillDef = 0, cntSpillUse = 0;
-          std::array<PReg *, 2> spillRegs = {PReg::lr(), PReg::ip()};
-          for (auto refdef : inst->getDefs()) {
-            auto &def = *refdef;
-            assert(isa<AsmReg>(def) && "Non-reg def!");
-            if (auto *preg = dyn_cast<PReg>(def)) {
-              continue;
-            } else if (auto *vreg = dyn_cast<VReg>(def)) {
-              if (auto it = regMap.find(vreg); it != regMap.end()) {
-                def = it->second;
-              } else if (regAlloc.spills.count(vreg)) {
-                assert(
-                    cntSpillDef < spillRegs.size() &&
-                    "Too many spills in an inst");
-                // spill it with str lr
-                def = spillRegs.at(cntSpillDef++);
-                int offset = spillMap.at(vreg);
-                auto storeSlotInst = new AsmStoreInst{};
-                generateSpillAddress(storeSlotInst, offset);
-                storeSlotInst->src = def;
-                label->push_after(inst, storeSlotInst);
-              } else {
-                // unused dst
-                def = spillRegs.at(0);
+        // 2. Remove unused insts, for better handling in step 3
+        for (auto *label : func->labels) {
+          for (auto *inst = label->Head; inst != nullptr;) {
+            auto *next = inst->Next;
+            assert(
+                inst->getDefs().size() <= 1 && "Can not handle > 1 defs now");
+            for (auto refdef : inst->getDefs()) {
+              auto &def = *refdef;
+              if (auto *vreg = dyn_cast<VReg>(def)) {
+                // If not in both maps, it's an unused dead def.
+                if (!regAlloc.regMap.count(vreg) &&
+                    !regAlloc.spills.count(vreg)) {
+                  label->remove(inst);
+                  break;
+                }
               }
-            } else {
-              olc_unreachable("Invalid asm reg for def");
+            }
+            inst = next;
+          }
+        }
+
+        // 3. Spill all regs into vregs, continue to next iteration.
+        // Note that we do not rewrite the vregs to pregs here, to reserve the
+        // space of allocating new vregs used in spilling.
+        if (!allocDone) {
+          for (auto *label : func->labels) {
+            for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
+              for (auto refdef : inst->getDefs()) {
+                auto &def = *refdef;
+                if (auto *vreg = dyn_cast<VReg>(def);
+                    regAlloc.spills.count(vreg)) {
+                  auto *reg_tmp = VReg::makeVReg(vreg->type);
+                  def = reg_tmp;
+                  int offset = spillMap.at(vreg);
+                  auto storeSlotInst = new AsmStoreInst{};
+                  label->push_after(inst, storeSlotInst);
+                  storeSlotInst->src = reg_tmp;
+                  generateSpillAddress(storeSlotInst, offset, label);
+                }
+              }
+
+              for (auto refuse : inst->getUses()) {
+                auto &use = *refuse;
+                if (auto *vreg = dyn_cast_if_present<VReg>(use);
+                    regAlloc.spills.count(vreg)) {
+                  auto *reg_tmp = VReg::makeVReg(vreg->type);
+                  use = reg_tmp;
+                  int offset = spillMap.at(vreg);
+                  auto loadSlotInst = new AsmLoadInst{};
+                  label->push_before(inst, loadSlotInst);
+                  loadSlotInst->dst = use;
+                  generateSpillAddress(loadSlotInst, offset, label);
+                }
+              }
             }
           }
+        }
 
-          for (auto refuse : inst->getUses()) {
-            auto &use = *refuse;
-            if (auto *vreg = dyn_cast_if_present<VReg>(use)) {
-              if (auto it = regMap.find(vreg); it != regMap.end()) {
-                use = it->second;
-              } else if (regAlloc.spills.count(vreg)) {
-                assert(
-                    cntSpillUse < spillRegs.size() &&
-                    "Too many spills in an inst");
-                // load it with ldr lr
-                use = spillRegs.at(cntSpillUse++);
-                int offset = spillMap.at(vreg);
-                auto loadSlotInst = new AsmLoadInst{};
-                generateSpillAddress(loadSlotInst, offset);
-                loadSlotInst->dst = use;
-                label->push_before(inst, loadSlotInst);
+        // 4. Rewrite all defs and uses
+        if (allocDone) {
+          for (auto *label : func->labels) {
+            for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
+              for (auto refdef : inst->getDefs()) {
+                auto &def = *refdef;
+                if (auto *vreg = dyn_cast<VReg>(def))
+                  def = regMap.at(vreg);
+              }
+              for (auto refuse : inst->getUses()) {
+                auto &use = *refuse;
+                if (auto *vreg = dyn_cast_if_present<VReg>(use))
+                  use = regMap.at(vreg);
               }
             }
           }
@@ -456,10 +484,17 @@ struct ArmGen {
               op = "ldr";
             }
             if (ldInst->offset) {
-              printArmInstr(
-                  op, {reg_dst->abiName(),
-                       "[" + reg_base->abiName() + ", " +
-                           cast<AsmImm>(ldInst->offset)->toAsm() + "]"});
+              if (auto *offsetImm = dyn_cast<AsmImm>(ldInst->offset)) {
+                printArmInstr(
+                    op, {reg_dst->abiName(), "[" + reg_base->abiName() + ", " +
+                                                 offsetImm->toAsm() + "]"});
+              } else if (auto *offsetReg = dyn_cast<PReg>(ldInst->offset)) {
+                printArmInstr(
+                    op, {reg_dst->abiName(), "[" + reg_base->abiName() + ", " +
+                                                 offsetReg->abiName() + "]"});
+              } else {
+                olc_unreachable("NYI");
+              }
             } else {
               printArmInstr(
                   op, {reg_dst->abiName(), "[" + reg_base->abiName() + "]"});
@@ -474,10 +509,17 @@ struct ArmGen {
               op = "str";
             }
             if (stInst->offset) {
-              printArmInstr(
-                  op, {reg_src->abiName(),
-                       "[" + reg_base->abiName() + ", " +
-                           cast<AsmImm>(stInst->offset)->toAsm() + "]"});
+              if (auto *offsetImm = dyn_cast<AsmImm>(stInst->offset)) {
+                printArmInstr(
+                    op, {reg_src->abiName(), "[" + reg_base->abiName() + ", " +
+                                                 offsetImm->toAsm() + "]"});
+              } else if (auto *offsetReg = dyn_cast<PReg>(stInst->offset)) {
+                printArmInstr(
+                    op, {reg_src->abiName(), "[" + reg_base->abiName() + ", " +
+                                                 offsetReg->abiName() + "]"});
+              } else {
+                olc_unreachable("NYI");
+              }
             } else {
               printArmInstr(
                   op, {reg_src->abiName(), "[" + reg_base->abiName() + "]"});

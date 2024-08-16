@@ -158,21 +158,24 @@ struct LinearScan {
   }
 
   void spillAtInterval(LivePair const &intv) {
-    auto spill = *activeIntervals.rbegin();
-    if (spill.end > intv.end) {
-      auto preg = regMap.at(spill.var);
-      regMap.erase(spill.var);
-      regMap[intv.var] = preg;
-      activeIntervals.erase(spill);
-      activeIntervals.insert(intv);
-      std::cerr << "Spilled " << (spill.var->type == AsmType::F32 ? "VF" : "VI")
-                << spill.var->id << " to stack\n";
-      spills.insert(spill.var);
-    } else {
-      std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
-                << intv.var->id << " to stack\n";
-      spills.insert(intv.var);
+    if (!activeIntervals.empty()) {
+      auto spill = *activeIntervals.rbegin();
+      if (spill.end > intv.end) {
+        auto preg = regMap.at(spill.var);
+        regMap.erase(spill.var);
+        regMap[intv.var] = preg;
+        activeIntervals.erase(spill);
+        activeIntervals.insert(intv);
+        std::cerr << "Spilled "
+                  << (spill.var->type == AsmType::F32 ? "VF" : "VI")
+                  << spill.var->id << " to stack\n";
+        spills.insert(spill.var);
+        return;
+      }
     }
+    std::cerr << "Spilled " << (intv.var->type == AsmType::F32 ? "VF" : "VI")
+              << intv.var->id << " to stack\n";
+    spills.insert(intv.var);
   }
 
   bool tryAllocateReg(LivePair const &intv) {
