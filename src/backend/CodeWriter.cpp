@@ -54,8 +54,8 @@ std::string CodeWriter::to_string(AsmValue *value) {
 
 void CodeWriter::printInst(AsmInst *inst) {
   static std::vector<std::string> tags = {
-      "add",    "sub",  "mul",  "div",   "mod",  "cmp",        "branch", "jump",
-      "return", "move", "load", "store", "call", "loadglobal", "string"};
+      "add",    "sub",  "mul",  "div",   "mod",  "cmp", "branch",     "jump",
+      "return", "move", "load", "store", "call", "cvt", "loadglobal", "string"};
 
   std::string op = tags[(int)inst->tag];
   if (auto *binInst = dyn_cast<AsmBinaryInst>(inst)) {
@@ -87,6 +87,13 @@ void CodeWriter::printInst(AsmInst *inst) {
     printCodeInstr(op, {to_string(storeInst->src), to_string(storeInst->addr)});
   } else if (auto *callInst = dyn_cast<AsmCallInst>(inst)) {
     printCodeInstr(op, {callInst->callee});
+  } else if (auto *cvtInst = dyn_cast<AsmConvertInst>(inst)) {
+    if (cvtInst->type == AsmConvertInst::CvtType::f2i) {
+      op += ".f2i";
+    } else if (cvtInst->type == AsmConvertInst::CvtType::i2f) {
+      op += ".i2f";
+    }
+    printCodeInstr(op, {to_string(cvtInst->dst), to_string(cvtInst->src)});
   } else {
     os << "invalid instr here" << std::endl;
   }

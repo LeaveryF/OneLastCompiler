@@ -166,6 +166,7 @@ struct AsmInst : IListNode<AsmInst> {
     Load,
     Store,
     Call,
+    Cvt,
     LoadGlobal,
     String,
   } tag;
@@ -306,6 +307,17 @@ struct AsmLoadGlobalInst : AsmInst {
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }
   std::vector<AsmValue **> getUses() override { return {}; }
+};
+
+struct AsmConvertInst : AsmInst {
+  AsmValue *src = nullptr, *dst = nullptr;
+  enum class CvtType { f2i, i2f } type;
+
+  AsmConvertInst(CvtType type) : AsmInst(Tag::Cvt), type(type) {}
+  static bool classof(const AsmInst *v) { return v->tag == Tag::Cvt; }
+
+  std::vector<AsmValue **> getDefs() override { return {&dst}; }
+  std::vector<AsmValue **> getUses() override { return {&src}; }
 };
 
 struct AsmFunc {

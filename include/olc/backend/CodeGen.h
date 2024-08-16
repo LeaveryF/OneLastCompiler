@@ -448,6 +448,30 @@ struct CodeGen {
             auto *jumpInst = new AsmJumpInst{nullptr};
             jumpInst->target = labelMap.at(irJumpInst->getTargetBlock());
             asmLabel->push_back(jumpInst);
+          } else if (auto *i2fInst = dyn_cast<IntToFloatInst>(irInst)) {
+            auto ireg = lowerValue(i2fInst->getIntValue(), asmLabel);
+            auto freg = AsmReg::makeVReg(AsmType::F32);
+            auto *asmMovInst = new AsmMoveInst{};
+            asmMovInst->src = ireg;
+            asmMovInst->dst = freg;
+            asmLabel->push_back(asmMovInst);
+            auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::i2f};
+            asmCvtInst->src = freg;
+            asmCvtInst->dst = freg;
+            asmLabel->push_back(asmCvtInst);
+            valueMap[i2fInst] = freg;
+          } else if (auto *f2iInst = dyn_cast<FloatToIntInst>(irInst)) {
+            auto freg = lowerValue(f2iInst->getFloatValue(), asmLabel);
+            auto ireg = AsmReg::makeVReg(AsmType::I32);
+            auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::f2i};
+            asmCvtInst->src = ireg;
+            asmCvtInst->dst = ireg;
+            asmLabel->push_back(asmCvtInst);
+            auto *asmMovInst = new AsmMoveInst{};
+            asmMovInst->src = freg;
+            asmMovInst->dst = ireg;
+            asmLabel->push_back(asmMovInst);
+            valueMap[f2iInst] = ireg;
           } else {
             olc_unreachable("NYI");
           }

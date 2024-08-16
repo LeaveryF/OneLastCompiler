@@ -546,9 +546,9 @@ struct ArmGen {
               op = "cmp";
             }
             if (auto reg_rhs = dyn_cast<PReg>(cmpInst->rhs))
-              printArmInstr("cmp", {reg_lhs->abiName(), reg_rhs->abiName()});
+              printArmInstr(op, {reg_lhs->abiName(), reg_rhs->abiName()});
             else if (auto *imm_rhs = dyn_cast<AsmImm>(cmpInst->rhs)) {
-              printArmInstr("cmp", {reg_lhs->abiName(), imm_rhs->toAsm()});
+              printArmInstr(op, {reg_lhs->abiName(), imm_rhs->toAsm()});
             } else {
               olc_unreachable("NYI");
             }
@@ -562,6 +562,16 @@ struct ArmGen {
             auto reg_dst = cast<PReg>(ldGlbInst->dst);
             printArmInstr(
                 "ldr", {reg_dst->abiName(), "=" + ldGlbInst->var->getName()});
+          } else if (auto *cvtInst = dyn_cast<AsmConvertInst>(inst)) {
+            auto reg_dst = cast<PReg>(cvtInst->dst);
+            auto reg_src = cast<PReg>(cvtInst->src);
+            if (cvtInst->type == AsmConvertInst::CvtType::f2i) {
+              printArmInstr(
+                  "vcvt.s32.f32", {reg_dst->abiName(), reg_src->abiName()});
+            } else if (cvtInst->type == AsmConvertInst::CvtType::i2f) {
+              printArmInstr(
+                  "vcvt.f32.s32", {reg_dst->abiName(), reg_src->abiName()});
+            }
           } else {
             olc_unreachable("NYI");
           }
