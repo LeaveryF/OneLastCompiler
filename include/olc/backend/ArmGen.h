@@ -252,8 +252,15 @@ struct ArmGen {
         auto *preg = dyn_cast_if_present<PReg>(reg);
         if (!preg)
           return;
-        if (preg->id >= 4 && preg->id <= 11) {
-          func->usedCalleeSavedRegs.insert(preg);
+        if (preg->type == AsmType::I32) {
+          if (preg->id >= 4 && preg->id <= 11) {
+            func->usedCalleeSavedRegs.insert(preg);
+          }
+        } else {
+          if (preg->id >= 16 && preg->id <= 31) {
+            olc_unreachable("float save NYI");
+            func->usedCalleeSavedRegs.insert(preg);
+          }
         }
       };
 
