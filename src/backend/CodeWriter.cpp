@@ -1,5 +1,5 @@
-#include <olc/backend/MachineIR.h>
 #include <olc/backend/CodeWriter.h>
+#include <olc/backend/MachineIR.h>
 
 namespace olc {
 
@@ -54,8 +54,9 @@ std::string CodeWriter::to_string(AsmValue *value) {
 
 void CodeWriter::printInst(AsmInst *inst) {
   static std::vector<std::string> tags = {
-      "add",    "sub",  "mul",  "div",   "mod",  "cmp", "branch",     "jump",
-      "return", "move", "load", "store", "call", "cvt", "loadglobal", "string"};
+      "add",  "sub",   "mul",    "div",  "mod",        "lsl",
+      "lsr",  "cmp",   "branch", "jump", "return",     "move",
+      "load", "store", "call",   "cvt",  "loadglobal", "string"};
 
   std::string op = tags[(int)inst->tag];
   if (auto *binInst = dyn_cast<AsmBinaryInst>(inst)) {

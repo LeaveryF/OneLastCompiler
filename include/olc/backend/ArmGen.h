@@ -513,6 +513,12 @@ struct ArmGen {
               break;
             case AsmInst::Tag::Mod:
               olc_unreachable("Should not produce MOD in IR");
+            case AsmInst::Tag::Lsl:
+              op = "lsl";
+              break;
+            case AsmInst::Tag::Lsr:
+              op = "lsr";
+              break;
             default:
               olc_unreachable("Unknown");
             }
