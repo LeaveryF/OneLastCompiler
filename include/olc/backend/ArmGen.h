@@ -323,9 +323,10 @@ struct ArmGen {
   }
 
   bool isEqualAsmValue(AsmValue *lhs, AsmValue *rhs) {
-    if (isa<AsmImm>(lhs)) {
+    if (!lhs || !rhs)
+      return lhs == rhs;
+    if (isa<AsmImm>(lhs))
       return AsmImm::isEqual(lhs, rhs);
-    }
     return lhs == rhs;
   }
 
