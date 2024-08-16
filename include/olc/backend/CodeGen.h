@@ -311,8 +311,12 @@ struct CodeGen {
           } else if (auto *irLoadInst = dyn_cast<LoadInst>(irInst)) {
             auto reg_res = AsmReg::makeVReg(convertType(irLoadInst->getType()));
             auto *asmLoadInst = new AsmLoadInst{};
-            asmLoadInst->addr = lowerValue<AsmImm::Imm12bit>(
-                irLoadInst->getPointer(), asmLabel);
+            if (reg_res->type == AsmType::F32)
+              asmLoadInst->addr = lowerValue<AsmImm::Imm8bitx4>(
+                  irLoadInst->getPointer(), asmLabel);
+            else
+              asmLoadInst->addr = lowerValue<AsmImm::Imm12bit>(
+                  irLoadInst->getPointer(), asmLabel);
             asmLoadInst->dst = reg_res;
             valueMap[irLoadInst] = reg_res;
             asmLabel->push_back(asmLoadInst);
@@ -320,8 +324,12 @@ struct CodeGen {
             // TODO:
             auto reg_src = lowerValue(irStoreInst->getValue(), asmLabel);
             auto *asmStoreInst = new AsmStoreInst{};
-            asmStoreInst->addr = lowerValue<AsmImm::Imm12bit>(
-                irStoreInst->getPointer(), asmLabel);
+            if (convertType(irStoreInst->getValue()->getType()) == AsmType::F32)
+              asmStoreInst->addr = lowerValue<AsmImm::Imm8bitx4>(
+                  irStoreInst->getPointer(), asmLabel);
+            else
+              asmStoreInst->addr = lowerValue<AsmImm::Imm12bit>(
+                  irStoreInst->getPointer(), asmLabel);
             asmStoreInst->src = reg_src;
             asmLabel->push_back(asmStoreInst);
           } else if (auto *irCallInst = dyn_cast<CallInst>(irInst)) {

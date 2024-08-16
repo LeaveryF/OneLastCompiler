@@ -183,9 +183,15 @@ struct ArmGen {
         allocDone = spillMap.empty();
 
         auto generateSpillAddress = [](AsmAccess *access, int offset,
-                                       AsmLabel *label) {
+                                       AsmLabel *label, AsmType type) {
           access->addr = PReg::sp();
-          if (AsmImm::match<AsmImm::Imm12bit>(offset)) {
+          bool isMatch = false;
+          if (type == AsmType::I32)
+            isMatch = AsmImm::match<AsmImm::Imm12bit>(offset);
+          else
+            isMatch = AsmImm::match<AsmImm::Imm8bitx4>(offset);
+
+          if (isMatch) {
             access->offset = new AsmImm{AsmImm::getBitRepr(offset)};
           } else {
             auto *imm = new AsmImm{AsmImm::getBitRepr(offset)};
@@ -234,7 +240,8 @@ struct ArmGen {
                   auto storeSlotInst = new AsmStoreInst{};
                   label->push_after(inst, storeSlotInst);
                   storeSlotInst->src = reg_tmp;
-                  generateSpillAddress(storeSlotInst, offset, label);
+                  generateSpillAddress(
+                      storeSlotInst, offset, label, reg_tmp->type);
                 }
               }
 
@@ -247,8 +254,9 @@ struct ArmGen {
                   int offset = spillMap.at(vreg);
                   auto loadSlotInst = new AsmLoadInst{};
                   label->push_before(inst, loadSlotInst);
-                  loadSlotInst->dst = use;
-                  generateSpillAddress(loadSlotInst, offset, label);
+                  loadSlotInst->dst = reg_tmp;
+                  generateSpillAddress(
+                      loadSlotInst, offset, label, reg_tmp->type);
                 }
               }
             }
