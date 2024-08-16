@@ -22,8 +22,7 @@
 #include <olc/frontend/Visitor.h>
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
-#include <olc/passes/PassManager.h>
-#include <olc/passes/SimplifyCFGPass.h>
+#include <olc/passes/Passes.h>
 
 using namespace antlr4;
 using namespace olc;
@@ -89,9 +88,12 @@ int main(int argc, const char *argv[]) {
 
   PassManager pm;
   pm.addPass(new SimplifyCFGPass{});
+  pm.addPass(new ConstantFoldingPass{});
   // pm.addPass(new DeadCodeEliminationPass{});
 
   pm.run(*mod);
+  asmWriter.printModule(mod);
+  std::cerr << "============\n";
 
   CodeGen codegen{mod};
   codegen.run();
