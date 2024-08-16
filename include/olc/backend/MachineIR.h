@@ -50,6 +50,7 @@ struct AsmReg : AsmValue {
   static VReg *makeVReg(AsmType type);
   static PReg *makePReg(AsmType type, int id);
 
+  static PReg *ip() { return makePReg(AsmType::I32, 12); }
   static PReg *sp() { return makePReg(AsmType::I32, 13); }
   static PReg *lr() { return makePReg(AsmType::I32, 14); }
   static PReg *pc() { return makePReg(AsmType::I32, 15); }

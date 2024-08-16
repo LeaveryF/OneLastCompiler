@@ -155,9 +155,12 @@ struct ArmGen {
 
       for (auto *label : func->labels) {
         for (auto *inst = label->Head; inst != nullptr; inst = inst->Next) {
+          // TODO: Use iterative algo to handle spill temp reg
+
           // We only have 1 temp reg: lr. If > 1 def or use is spilled for an
           // instruction, we cannot handle it.
           int cntSpillDef = 0, cntSpillUse = 0;
+          std::array<PReg *, 2> spillRegs = {PReg::lr(), PReg::ip()};
           for (auto refdef : inst->getDefs()) {
             auto &def = *refdef;
             assert(isa<AsmReg>(def) && "Non-reg def!");
@@ -167,10 +170,11 @@ struct ArmGen {
               if (auto it = regMap.find(vreg); it != regMap.end()) {
                 def = it->second;
               } else if (regAlloc.spills.count(vreg)) {
-                assert(cntSpillDef < 1 && "Too many spills in an inst");
-                cntSpillDef++;
+                assert(
+                    cntSpillDef < spillRegs.size() &&
+                    "Too many spills in an inst");
                 // spill it with str lr
-                def = PReg::lr();
+                def = spillRegs.at(cntSpillDef++);
                 int offset = spillMap.at(vreg);
                 auto storeSlotInst = new AsmStoreInst{};
                 generateSpillAddress(storeSlotInst, offset);
@@ -178,7 +182,7 @@ struct ArmGen {
                 label->push_after(inst, storeSlotInst);
               } else {
                 // unused dst
-                def = PReg::lr();
+                def = spillRegs.at(0);
               }
             } else {
               olc_unreachable("Invalid asm reg for def");
@@ -191,10 +195,11 @@ struct ArmGen {
               if (auto it = regMap.find(vreg); it != regMap.end()) {
                 use = it->second;
               } else if (regAlloc.spills.count(vreg)) {
-                assert(cntSpillUse < 1 && "Too many spills in an inst");
-                cntSpillUse++;
+                assert(
+                    cntSpillUse < spillRegs.size() &&
+                    "Too many spills in an inst");
                 // load it with ldr lr
-                use = PReg::lr();
+                use = spillRegs.at(cntSpillUse++);
                 int offset = spillMap.at(vreg);
                 auto loadSlotInst = new AsmLoadInst{};
                 generateSpillAddress(loadSlotInst, offset);
