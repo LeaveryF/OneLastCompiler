@@ -334,16 +334,16 @@ struct CodeGen {
             // 寄存器传参 r0-r3 / s0-s15  mov ri, value
             for (unsigned i = 0; i < argsInIntRegs.size(); i++) {
               auto *asmMovInst = new AsmMoveInst{};
-              asmMovInst->src = lowerValue(args[i], asmLabel);
-              auto *preg = AsmReg::makePReg(convertType(args[i]->getType()), i);
+              asmMovInst->src = lowerValue(argsInIntRegs[i], asmLabel);
+              auto *preg = AsmReg::makePReg(AsmType::I32, i);
               asmMovInst->dst = preg;
               asmCallInst->callUses.insert(preg);
               asmLabel->push_back(asmMovInst);
             }
             for (unsigned i = 0; i < argsInFloatRegs.size(); i++) {
               auto *asmMovInst = new AsmMoveInst{};
-              asmMovInst->src = lowerValue(args[i], asmLabel);
-              auto *preg = AsmReg::makePReg(convertType(args[i]->getType()), i);
+              asmMovInst->src = lowerValue(argsInFloatRegs[i], asmLabel);
+              auto *preg = AsmReg::makePReg(AsmType::F32, i);
               asmMovInst->dst = preg;
               asmCallInst->callUses.insert(preg);
               asmLabel->push_back(asmMovInst);
