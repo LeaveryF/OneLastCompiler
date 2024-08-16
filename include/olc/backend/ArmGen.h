@@ -519,6 +519,9 @@ struct ArmGen {
             case AsmInst::Tag::Lsr:
               op = "lsr";
               break;
+            case AsmInst::Tag::Rsb:
+              op = "rsb";
+              break;
             default:
               olc_unreachable("Unknown");
             }
