@@ -283,9 +283,46 @@ struct ArmGen {
     os << ".skip " << size << '\n';
   }
 
+  void peepHole() {
+    for (auto *func : module->funcs) {
+      if (func->isBuiltin)
+        continue;
+      for (auto *label : func->labels) {
+        for (auto *inst = label->Head; inst; inst = inst->Next) {
+          if (auto *movInst = dyn_cast<AsmMoveInst>(inst)) {
+            if (movInst->src == movInst->dst) {
+              label->remove(movInst);
+            }
+          } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
+            if (inst->Prev) {
+              if (auto *stInst = dyn_cast<AsmStoreInst>(inst->Prev)) {
+                if (stInst->src == ldInst->dst &&
+                    stInst->addr == ldInst->addr) {
+                  label->remove(ldInst);
+                }
+              }
+            }
+          } else if (auto *stInst = dyn_cast<AsmStoreInst>(inst)) {
+            if (inst->Prev) {
+              if (auto *ldInst = dyn_cast<AsmLoadInst>(inst->Prev)) {
+                if (ldInst->dst == stInst->src &&
+                    ldInst->addr == stInst->addr) {
+                  label->remove(stInst);
+                }
+              }
+            }
+          } else {
+            // pass
+          }
+        }
+      }
+    }
+  }
+
   void run() {
     runRegAlloc();
     calcStackInfo();
+    peepHole();
 
     os << ".arch armv7ve\n";
 
