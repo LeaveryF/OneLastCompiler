@@ -555,6 +555,11 @@ struct ArmGen {
               olc_unreachable("NYI");
             }
 
+            if (reg_lhs->type == AsmType::F32) {
+              // 从协处理器中转移条件标志
+              printArmInstr("vmrs", {"APSR_nzcv", "FPSCR"});
+            }
+
           } else if (auto *jmpInst = dyn_cast<AsmJumpInst>(inst)) {
             // 处理无条件跳转指令
             printArmInstr("b", {getLabel(jmpInst->target)});
