@@ -14,25 +14,23 @@ public:
   Mem2RegPass() : FunctionPass(&ID) {}
 
   bool runOnFunction(Function &function) override {
-    std::vector<AllocaInst *> allocas;
     std::map<AllocaInst *, std::vector<StoreInst *>> allocaDefs;
     for (auto *bb : function.basicBlocks)
       for (auto *inst : bb->instructions) {
-        if (auto *alloca = dyn_cast<AllocaInst>(inst)) {
-          allocas.push_back(alloca);
-        } else if (auto *store = dyn_cast<StoreInst>(inst)) {
+        if (auto *store = dyn_cast<StoreInst>(inst)) {
           if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer())) {
-            allocaDefs[alloca].push_back(store);
+            if (!alloca->getAllocatedType()->isArrayTy())
+              allocaDefs[alloca].push_back(store);
           }
         }
       }
 
     // 1. insert phi
     std::map<PhiInst *, AllocaInst *> phiMap;
-    for (auto *alloca : allocas) {
+    for (auto &&[alloca, defs] : allocaDefs) {
       std::vector<BasicBlock *> worklist;
       std::set<BasicBlock *> visited;
-      for (auto *def : allocaDefs[alloca]) {
+      for (auto *def : defs) {
         worklist.push_back(def->parent);
       }
       while (!worklist.empty()) {
@@ -63,18 +61,20 @@ public:
       // Remove mem ops and update renameMap to phi refs.
       for (auto itInst = bb->instructions.begin();
            itInst != bb->instructions.end();) {
-        if (auto *alloca = dyn_cast<AllocaInst>(*itInst)) {
+        if (allocaDefs.count(dyn_cast<AllocaInst>(*itInst))) {
           itInst = bb->instructions.erase(itInst);
           continue;
         } else if (auto *load = dyn_cast<LoadInst>(*itInst)) {
-          if (auto *alloca = dyn_cast<AllocaInst>(load->getPointer())) {
+          if (auto *alloca = dyn_cast<AllocaInst>(load->getPointer());
+              allocaDefs.count(alloca)) {
             Value *newVal = renameMap[bb][alloca] ?: Undef::get();
             load->replaceAllUseWith(newVal);
             itInst = bb->instructions.erase(itInst);
             continue;
           }
         } else if (auto *store = dyn_cast<StoreInst>(*itInst)) {
-          if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer())) {
+          if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer());
+              allocaDefs.count(alloca)) {
             renameMap[bb][alloca] = store->getValue();
             itInst = bb->instructions.erase(itInst);
             continue;
