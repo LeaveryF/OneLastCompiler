@@ -177,6 +177,12 @@ struct AsmInst : IListNode<AsmInst> {
     String,
   } tag;
 
+  enum class ShiftType {
+    Lsl,
+    Lsr,
+    Asr,
+  };
+
   AsmInst(Tag tag) : tag(tag) {}
 
   virtual std::vector<AsmValue **> getDefs() = 0;
@@ -194,8 +200,7 @@ struct AsmLabel : IList<AsmInst> {
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
   int shift = 0;
-  // TODO: expand shift type?
-  bool isLsr = false; // default LSL
+  ShiftType shiftTag = ShiftType::Lsl;
 
   AsmBinaryInst(Tag tag) : AsmInst(tag) {
     assert(

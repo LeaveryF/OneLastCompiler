@@ -548,10 +548,22 @@ struct ArmGen {
               operands = {reg_dst->abiName(), reg_lhs->abiName(), imm->toAsm()};
             }
             if (binInst->shift != 0) {
-              assert(binInst->shift > 0 && "Only LSL is supported");
+              std::string shiftOp;
+              switch (binInst->shiftTag) {
+              case AsmInst::ShiftType::Lsl:
+                shiftOp = "lsl";
+                break;
+              case AsmInst::ShiftType::Lsr:
+                shiftOp = "lsr";
+                break;
+              case AsmInst::ShiftType::Asr:
+                shiftOp = "asr";
+                break;
+              default:
+                olc_unreachable("Unknown");
+              }
               operands.push_back(
-                  (binInst->isLsr ? "lsr #" : "lsl #") +
-                  std::to_string(binInst->shift));
+                  shiftOp + " #" + std::to_string(binInst->shift));
             }
             printArmInstr(op, operands);
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
