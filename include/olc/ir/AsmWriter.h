@@ -31,6 +31,8 @@ struct AssemblyWriter {
 
   AssemblyWriter(std::ostream &os) : os(os) {}
 
+  void prepareNamesForFunc(Function *);
+
   void printModule(Module *);
   void printGlobal(GlobalVariable *);
   void printFunc(Function *);

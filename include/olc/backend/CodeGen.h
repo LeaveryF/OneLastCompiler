@@ -113,6 +113,7 @@ struct CodeGen {
     auto *asmMovInst = new AsmMoveInst{};
     asmMovInst->src = imm;
     asmMovInst->dst = asmReg;
+    assert(label);
     label->push_back(asmMovInst);
     if (type == AsmType::F32) {
       auto asmRegF = AsmReg::makeVReg(AsmType::F32);
@@ -137,6 +138,7 @@ struct CodeGen {
       auto *ldGlbInst = new AsmLoadGlobalInst{};
       ldGlbInst->dst = AsmReg::makeVReg(AsmType::I32);
       ldGlbInst->var = irGlobal;
+      assert(label);
       label->push_back(ldGlbInst);
       return ldGlbInst->dst;
     } else {
@@ -240,9 +242,8 @@ struct CodeGen {
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = labelMap.at(irBB);
         for (auto *irInst : irBB->instructions) {
-          // for debug
-          auto tag = irInst->tag;
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
+            auto *asmRetInst = new AsmReturnInst{};
             if (auto *retVal = irRetInst->getReturnValue()) {
               // mov r0 / s0, value
               auto *asmMovInst = new AsmMoveInst{};
@@ -250,8 +251,11 @@ struct CodeGen {
               asmMovInst->dst =
                   AsmReg::makePReg(convertType(retVal->getType()), 0);
               asmLabel->push_back(asmMovInst);
+              asmLabel->terminatorBegin = asmMovInst;
+            } else {
+              asmLabel->terminatorBegin = asmRetInst;
             }
-            asmLabel->push_back(new AsmReturnInst);
+            asmLabel->push_back(asmRetInst);
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto opTag = convertBinOpTag(irBinInst->tag);
             if (opTag == AsmBinaryInst::Tag::Mul &&
@@ -691,35 +695,43 @@ struct CodeGen {
             branchInst->falseTarget =
                 labelMap.at(irBranchInst->getFalseBlock());
             asmLabel->push_back(branchInst);
+            asmLabel->terminatorBegin = branchInst;
           } else if (auto *irJumpInst = dyn_cast<JumpInst>(irInst)) {
             // 处理无条件跳转指令
             auto *jumpInst = new AsmJumpInst{nullptr};
             jumpInst->target = labelMap.at(irJumpInst->getTargetBlock());
             asmLabel->push_back(jumpInst);
+            asmLabel->terminatorBegin = jumpInst;
           } else if (auto *i2fInst = dyn_cast<IntToFloatInst>(irInst)) {
             auto ireg = lowerValue(i2fInst->getIntValue(), asmLabel);
-            auto freg = AsmReg::makeVReg(AsmType::F32);
+            auto freg1 = AsmReg::makeVReg(AsmType::F32),
+                 freg2 = AsmReg::makeVReg(AsmType::F32);
             auto *asmMovInst = new AsmMoveInst{};
             asmMovInst->src = ireg;
-            asmMovInst->dst = freg;
+            asmMovInst->dst = freg1;
             asmLabel->push_back(asmMovInst);
             auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::i2f};
-            asmCvtInst->src = freg;
-            asmCvtInst->dst = freg;
+            asmCvtInst->src = freg1;
+            asmCvtInst->dst = freg2;
             asmLabel->push_back(asmCvtInst);
-            valueMap[i2fInst] = freg;
+            valueMap[i2fInst] = freg2;
           } else if (auto *f2iInst = dyn_cast<FloatToIntInst>(irInst)) {
             auto freg = lowerValue(f2iInst->getFloatValue(), asmLabel);
+            auto freg_tmp = AsmReg::makeVReg(AsmType::F32);
             auto ireg = AsmReg::makeVReg(AsmType::I32);
             auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::f2i};
             asmCvtInst->src = freg;
-            asmCvtInst->dst = freg;
+            asmCvtInst->dst = freg_tmp;
             asmLabel->push_back(asmCvtInst);
             auto *asmMovInst = new AsmMoveInst{};
-            asmMovInst->src = freg;
+            asmMovInst->src = freg_tmp;
             asmMovInst->dst = ireg;
             asmLabel->push_back(asmMovInst);
             valueMap[f2iInst] = ireg;
+          } else if (auto *phiInst = dyn_cast<PhiInst>(irInst)) {
+            // Just create a vreg for it. Phi is handled later.
+            auto *vreg = AsmReg::makeVReg(convertType(phiInst->getType()));
+            valueMap[phiInst] = vreg;
           } else {
             olc_unreachable("NYI");
           }
@@ -734,6 +746,61 @@ struct CodeGen {
 
         for (auto *irPred : irBB->predecessors)
           asmLabel->preds.push_back(labelMap.at(irPred));
+      }
+
+      // Phi nodes
+      for (auto *irBB : irFunc->basicBlocks) {
+        auto *asmLabel = labelMap.at(irBB);
+
+        // Pair<dst, src>
+        using PMove = std::vector<std::pair<AsmValue *, Value *>>;
+        // Multiple allocas result in PMove semantically.
+        // PMove phiMove;
+        // Prepare values in vregs for consuming of phi pmove.
+        std::map<AsmLabel *, PMove> predMoves;
+
+        for (auto *irInst : irBB->instructions) {
+          if (auto *phiInst = dyn_cast<PhiInst>(irInst)) {
+            auto *phiVreg = lowerValue(phiInst, asmLabel);
+            for (unsigned i = 0; i < phiInst->getNumIncomingValues(); i++) {
+              auto *pred = phiInst->getIncomingBlock(i);
+              auto *value = phiInst->getIncomingValue(i);
+              if (isa<Undef>(value))
+                continue;
+              auto *predLabel = labelMap.at(pred);
+              predMoves[predLabel].emplace_back(phiVreg, value);
+            }
+          } else
+            break;
+        }
+
+        for (auto &[pred, moves] : predMoves) {
+          for (auto &[dst, src] : moves) {
+            auto *moveInst = new AsmMoveInst{};
+            moveInst->dst = dst;
+            assert(pred->terminatorBegin && "Should have terminator");
+            pred->push_before(pred->terminatorBegin, moveInst);
+            // Calculate lower value
+            if (auto *constValue = dyn_cast<ConstantValue>(src)) {
+              if (constValue->isFloat()) {
+                // Load it to a ireg, then move to freg
+                auto *ireg = VReg::makeVReg(AsmType::I32);
+                moveInst->src = ireg;
+                auto *loadImmInst = new AsmMoveInst{};
+                loadImmInst->dst = ireg;
+                loadImmInst->src =
+                    new AsmImm(AsmImm::getBitRepr(constValue->getFloat()));
+                pred->push_before(moveInst, loadImmInst);
+              } else {
+                moveInst->src = new AsmImm{constValue->getInt()};
+              }
+            } else {
+              // Must not be LoadGlobal
+              assert(!isa<GlobalVariable>(src));
+              moveInst->src = valueMap.at(src);
+            }
+          }
+        }
       }
     }
   }

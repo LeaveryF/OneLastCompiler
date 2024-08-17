@@ -193,6 +193,7 @@ struct AsmLabel : IList<AsmInst> {
   std::string name;
   // other informations
   std::vector<AsmLabel *> preds, succs;
+  AsmInst *terminatorBegin = nullptr;
 
   AsmLabel(std::string name) : name(name) {}
 };
