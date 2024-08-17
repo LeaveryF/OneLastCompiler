@@ -40,7 +40,7 @@ public:
           if (visited.count(df))
             continue;
           visited.insert(df);
-          auto *newPhi = new PhiInst(df, alloca->getType());
+          auto *newPhi = new PhiInst(df, alloca->getAllocatedType());
           df->instructions.push_front(newPhi);
           phiMap[newPhi] = alloca;
           worklist.push_back(df);

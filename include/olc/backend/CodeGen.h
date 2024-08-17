@@ -506,7 +506,7 @@ struct CodeGen {
         auto *asmLabel = labelMap.at(irBB);
 
         // Pair<dst, src>
-        using PMove = std::vector<std::pair<AsmValue *, AsmValue *>>;
+        using PMove = std::vector<std::pair<AsmValue *, Value *>>;
         // Multiple allocas result in PMove semantically.
         // PMove phiMove;
         // Prepare values in vregs for consuming of phi pmove.
@@ -521,8 +521,7 @@ struct CodeGen {
               if (isa<Undef>(value))
                 continue;
               auto *predLabel = labelMap.at(pred);
-              auto *predValue = lowerValue<AsmImm::Imm32bit>(value, nullptr);
-              predMoves[predLabel].push_back({phiVreg, predValue});
+              predMoves[predLabel].emplace_back(phiVreg, value);
             }
           } else
             break;
@@ -530,11 +529,29 @@ struct CodeGen {
 
         for (auto &[pred, moves] : predMoves) {
           for (auto &[dst, src] : moves) {
-            auto *pMove = new AsmMoveInst{};
-            pMove->src = src;
-            pMove->dst = dst;
+            auto *moveInst = new AsmMoveInst{};
+            moveInst->dst = dst;
             assert(pred->terminatorBegin && "Should have terminator");
-            pred->push_before(pred->terminatorBegin, pMove);
+            pred->push_before(pred->terminatorBegin, moveInst);
+            // Calculate lower value
+            if (auto *constValue = dyn_cast<ConstantValue>(src)) {
+              if (constValue->isFloat()) {
+                // Load it to a ireg, then move to freg
+                auto *ireg = VReg::makeVReg(AsmType::I32);
+                moveInst->src = ireg;
+                auto *loadImmInst = new AsmMoveInst{};
+                loadImmInst->dst = ireg;
+                loadImmInst->src =
+                    new AsmImm(AsmImm::getBitRepr(constValue->getFloat()));
+                pred->push_before(moveInst, loadImmInst);
+              } else {
+                moveInst->src = new AsmImm{constValue->getInt()};
+              }
+            } else {
+              // Must not be LoadGlobal
+              assert(!isa<GlobalVariable>(src));
+              moveInst->src = valueMap.at(src);
+            }
           }
         }
       }
