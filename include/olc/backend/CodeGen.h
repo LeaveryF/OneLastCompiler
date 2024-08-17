@@ -273,7 +273,7 @@ struct CodeGen {
               //     isa<ConstantValue>(irBinInst->getLHS()) ^
               //     isa<ConstantValue>(irBinInst->getRHS()));
               if (isa<ConstantValue>(lhs)) {
-                // TODO: remove this later, when constant propagation is done
+                // TODO: remove this later, when constant folding is done
               } else if (imm < 0) {
                 // pass now, using Mul instruction
               } else if (imm == 0) {
@@ -290,9 +290,7 @@ struct CodeGen {
                 valueMap[irBinInst] = valueMap[lhs];
                 continue;
               } else if ((imm & (imm - 1)) == 0) { // imm = 2^n
-                // lsl rx, value, #sh
-                // 也等价于
-                // mov rx, value, LSL #sh
+                // lsl rx, value, #sh 或者也等价于 mov rx, value, LSL #sh
                 int sh = 31 - __builtin_clz(imm);
                 auto reg_res = AsmReg::makeVReg(AsmType::I32);
                 auto *asmBinInst = new AsmBinaryInst{AsmBinaryInst::Tag::Lsl};
@@ -304,6 +302,8 @@ struct CodeGen {
                 asmLabel->push_back(asmBinInst);
                 continue;
               } else if ((imm & (imm + 1)) == 0) { // imm = 2^n - 1
+                // lsl rx, value, #sh
+                // sub rx, rx, value
                 int sh = 32 - __builtin_clz(imm);
                 auto reg_res = AsmReg::makeVReg(AsmType::I32);
                 auto *asmLslInst = new AsmBinaryInst{AsmBinaryInst::Tag::Lsl};
@@ -318,9 +318,9 @@ struct CodeGen {
                 valueMap[irBinInst] = reg_res;
                 asmLabel->push_back(asmSubInst);
                 continue;
-              } else if (
-                  __builtin_popcount(imm) == 2 &&
-                  (imm & 1) == 0) { // imm = 2^n + 1
+              } else if (((imm - 1) & (imm - 2)) == 0) { // imm = 2^n + 1
+                // lsl rx, value, #sh
+                // add rx, rx, value
                 int sh = 31 - __builtin_clz(imm);
                 auto reg_res = AsmReg::makeVReg(AsmType::I32);
                 auto *asmLslInst = new AsmBinaryInst{AsmBinaryInst::Tag::Lsl};
@@ -336,6 +336,9 @@ struct CodeGen {
                 asmLabel->push_back(asmAddInst);
                 continue;
               } else if (__builtin_popcount(imm) == 2) { // imm = 2^n + 2^m
+                // lsl rx, value, #sh1
+                // lsl ry, value, #sh2
+                // add rx, rx, ry
                 int sh1 = 31 - __builtin_clz(imm);
                 int sh2 = __builtin_ctz(imm);
                 auto reg_res1 = AsmReg::makeVReg(AsmType::I32);
@@ -359,6 +362,140 @@ struct CodeGen {
                 continue;
               } else {
                 // fall through, using Mul instruction
+              }
+            }
+            if (opTag == AsmBinaryInst::Tag::Div &&
+                (isa<ConstantValue>(irBinInst->getRHS()) &&
+                 cast<ConstantValue>(irBinInst->getRHS())
+                     ->isInt())) { // Div using integer constant, opt
+              int imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
+              auto *lhs = irBinInst->getLHS();
+              assert(imm != 0);
+              // assert(
+              //     isa<ConstantValue>(irBinInst->getLHS()) ^
+              //     isa<ConstantValue>(irBinInst->getRHS()));
+              bool neg = false;
+              if (imm < 0) {
+                neg = true;
+                imm = -imm;
+              }
+              if (isa<ConstantValue>(lhs)) {
+                // TODO: remove this later, when constant folding is done
+              } else if (imm == 1) {
+                // remove
+                if (neg) {
+                  auto *asmSubInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
+                  asmSubInst->lhs = lowerValue(lhs, asmLabel);
+                  asmSubInst->rhs = lowerImm<AsmImm::Operand2>(0, asmLabel);
+                  asmSubInst->dst = lowerValue(lhs, asmLabel);
+                  asmLabel->push_back(asmSubInst);
+                }
+                valueMap[irBinInst] = valueMap[lhs];
+                continue;
+              } else if ((imm & (imm - 1)) == 0) { // |imm| = 2^n
+                // 被除数为正数 等价于算术右移
+                // 被除数为负数 等价于算术右移+1
+                // 可以使用被除数加上(除数-1)进行修正
+                // dec bin      asr right
+                // -1  11111111 -1  0
+                // -2  11111110 -1  -1
+                // -3  11111101 -2  -1
+                // -4  11111100 -2  -2
+                // -5  11111011 -3  -2
+                // -6  11111010 -3  -3
+                // -7  11111001 -4  -3
+                // -8  11111000 -4  -4
+                // 除数的符号只影响最后的rsb指令存在与否
+                // asr rx, value, #31 @ 取出符号位
+                // add rx, value, rx, lsr #32-sh @ 加上(除数-1)进行修正
+                // asr rx, rx, #sh @ 算术右移
+                int sh = 31 - __builtin_clz(imm);
+                auto reg_res = AsmReg::makeVReg(AsmType::I32);
+                auto *asmAsrInst = new AsmBinaryInst{AsmBinaryInst::Tag::Asr};
+                asmAsrInst->lhs = lowerValue(lhs, asmLabel);
+                asmAsrInst->rhs = lowerImm<AsmImm::Operand2>(31, asmLabel);
+                asmAsrInst->dst = reg_res;
+                asmLabel->push_back(asmAsrInst);
+                auto *asmAddInst = new AsmBinaryInst{AsmBinaryInst::Tag::Add};
+                asmAddInst->lhs = lowerValue(lhs, asmLabel);
+                asmAddInst->rhs = reg_res;
+                asmAddInst->shift = 32 - sh;
+                asmAddInst->shiftTag = AsmInst::ShiftType::Lsr;
+                asmAddInst->dst = reg_res;
+                asmLabel->push_back(asmAddInst);
+                auto *asmAsrInst2 = new AsmBinaryInst{AsmBinaryInst::Tag::Asr};
+                asmAsrInst2->lhs = reg_res;
+                asmAsrInst2->rhs = lowerImm<AsmImm::Operand2>(sh, asmLabel);
+                asmAsrInst2->dst = reg_res;
+                asmLabel->push_back(asmAsrInst2);
+                if (neg) {
+                  auto *asmSubInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
+                  asmSubInst->lhs = reg_res;
+                  asmSubInst->rhs = lowerImm<AsmImm::Operand2>(0, asmLabel);
+                  asmSubInst->dst = reg_res;
+                  asmLabel->push_back(asmSubInst);
+                }
+                valueMap[irBinInst] = reg_res;
+                continue;
+              } else { // other all
+                int log = 31 - __builtin_clz(imm);
+                // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934
+                std::bitset<32> bits((uint32_t)imm);
+                uint64_t n = ((uint64_t)(1u << (log - 1)) << 32);
+                uint32_t proposed = (uint32_t)(n / imm);
+                uint32_t rem = (uint32_t)(n - (uint64_t)proposed * imm);
+                proposed <<= 1;
+                uint32_t twiceRem = (rem << 1);
+                if (twiceRem >= imm || twiceRem < rem) {
+                  proposed += 1;
+                }
+                proposed += 1;
+                int mask = 1 << log;
+                int isPower2 = (proposed == 0) ? 1 : 0;
+                // smmul rx, value, r(proposed)
+                // add rx, rx, value
+                // and ry, r(mask-isPower2), rx, lsr #31
+                // add rx, rx, ry
+                // asr rx, rx, #sh
+                auto reg_res = AsmReg::makeVReg(AsmType::I32);
+                auto *asmSmmulInst =
+                    new AsmBinaryInst{AsmBinaryInst::Tag::Smmul};
+                asmSmmulInst->lhs = lowerValue(lhs, asmLabel);
+                asmSmmulInst->rhs = lowerImm((int32_t)proposed, asmLabel);
+                asmSmmulInst->dst = reg_res;
+                asmLabel->push_back(asmSmmulInst);
+                auto *asmAddInst = new AsmBinaryInst{AsmBinaryInst::Tag::Add};
+                asmAddInst->lhs = reg_res;
+                asmAddInst->rhs = lowerValue(lhs, asmLabel);
+                asmAddInst->dst = reg_res;
+                asmLabel->push_back(asmAddInst);
+                auto reg_tmp = AsmReg::makeVReg(AsmType::I32);
+                auto *asmAndInst = new AsmBinaryInst{AsmBinaryInst::Tag::And};
+                asmAndInst->lhs = lowerImm(mask - isPower2, asmLabel);
+                asmAndInst->rhs = reg_res;
+                asmAndInst->shift = 31;
+                asmAndInst->shiftTag = AsmInst::ShiftType::Asr;
+                asmAndInst->dst = reg_tmp;
+                asmLabel->push_back(asmAndInst);
+                auto *asmAddInst2 = new AsmBinaryInst{AsmBinaryInst::Tag::Add};
+                asmAddInst2->lhs = reg_res;
+                asmAddInst2->rhs = reg_tmp;
+                asmAddInst2->dst = reg_res;
+                asmLabel->push_back(asmAddInst2);
+                auto *asmAsrInst = new AsmBinaryInst{AsmBinaryInst::Tag::Asr};
+                asmAsrInst->lhs = reg_res;
+                asmAsrInst->rhs = lowerImm<AsmImm::Operand2>(log, asmLabel);
+                asmAsrInst->dst = reg_res;
+                asmLabel->push_back(asmAsrInst);
+                if (neg) {
+                  auto *asmSubInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
+                  asmSubInst->lhs = reg_res;
+                  asmSubInst->rhs = lowerImm<AsmImm::Operand2>(0, asmLabel);
+                  asmSubInst->dst = reg_res;
+                  asmLabel->push_back(asmSubInst);
+                }
+                valueMap[irBinInst] = reg_res;
+                continue;
               }
             }
             if (opTag == AsmBinaryInst::Tag::Cmp) {
