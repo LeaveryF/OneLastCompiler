@@ -240,8 +240,6 @@ struct CodeGen {
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = labelMap.at(irBB);
         for (auto *irInst : irBB->instructions) {
-          // for debug
-          auto tag = irInst->tag;
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             if (auto *retVal = irRetInst->getReturnValue()) {
               // mov r0 / s0, value
