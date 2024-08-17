@@ -3,10 +3,10 @@
 #include <cassert>
 #include <iostream>
 #include <list>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
-#include <set>
 
 #include <olc/Support.h>
 #include <olc/ir/Type.h>
@@ -84,6 +84,17 @@ struct Value {
 
 protected:
   Type *type;
+};
+
+struct Undef : public Value {
+  Undef() : Value(Tag::Undef, VoidType::get()) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Undef; }
+
+  static Undef *get() {
+    static Undef undef;
+    return &undef;
+  }
 };
 
 struct User : public Value {
@@ -367,6 +378,39 @@ struct FloatToIntInst : Instruction {
   static bool classof(const Value *V) { return V->tag == Tag::FloatToInt; }
 
   Value *getFloatValue() const { return getOperand(0); }
+};
+
+struct PhiInst : Instruction {
+  PhiInst(BasicBlock *bb, Type *type) : Instruction(bb, type, Tag::Phi, {}) {
+    for (auto *pred : bb->predecessors) {
+      addOperand(Undef::get());
+      addOperand(pred);
+    }
+  }
+
+  static bool classof(const Value *V) { return V->tag == Tag::Phi; }
+
+  Value *getIncomingValueForBlock(BasicBlock *bb) const {
+    for (unsigned i = 0; i < operands.size(); i += 2) {
+      if (cast<BasicBlock>(getOperand(i + 1)) == bb)
+        return getOperand(i);
+    }
+    olc_unreachable("No incoming value for block");
+  }
+
+  void setIncomingValueForBlock(Value *val, BasicBlock *bb) {
+    for (unsigned i = 0; i < operands.size(); i += 2) {
+      if (cast<BasicBlock>(getOperand(i + 1)) == bb) {
+        setOperand(i, val);
+        return;
+      }
+    }
+    olc_unreachable("No incoming value for block");
+  }
+
+  BasicBlock *getIncomingBlock(unsigned i) const {
+    return cast<BasicBlock>(getOperand(i * 2 + 1));
+  }
 };
 
 struct Constant : Value {

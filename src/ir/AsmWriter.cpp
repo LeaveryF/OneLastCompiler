@@ -123,7 +123,12 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
       if (i != 1)
         os << " ";
     }
-    if (auto *constVal = dyn_cast<Constant>(op)) {
+    if (isa<PhiInst>(instruction) && i % 2 == 0) {
+      os << "[";
+    }
+    if (op == Undef::get()) {
+      os << "undef";
+    } else if (auto *constVal = dyn_cast<Constant>(op)) {
       constVal->print(os);
     } else if (auto *instr = dyn_cast<Instruction>(op)) {
       os << "%" << nameManager[instr];
@@ -136,6 +141,9 @@ void AssemblyWriter::printInstr(Instruction *instruction) {
       os << "(";
     } else {
       olc_unreachable("NYI");
+    }
+    if (isa<PhiInst>(instruction) && i % 2 == 1) {
+      os << "]";
     }
   }
 
