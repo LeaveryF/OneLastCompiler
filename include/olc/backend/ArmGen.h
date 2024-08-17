@@ -549,7 +549,9 @@ struct ArmGen {
             }
             if (binInst->shift != 0) {
               assert(binInst->shift > 0 && "Only LSL is supported");
-              operands.push_back("lsl #" + std::to_string(binInst->shift));
+              operands.push_back(
+                  (binInst->isLsr ? "lsr #" : "lsl #") +
+                  std::to_string(binInst->shift));
             }
             printArmInstr(op, operands);
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {

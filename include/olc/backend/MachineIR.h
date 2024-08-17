@@ -194,6 +194,8 @@ struct AsmLabel : IList<AsmInst> {
 struct AsmBinaryInst : AsmInst {
   AsmValue *dst = nullptr, *lhs = nullptr, *rhs = nullptr;
   int shift = 0;
+  // TODO: expand shift type?
+  bool isLsr = false; // default LSL
 
   AsmBinaryInst(Tag tag) : AsmInst(tag) {
     assert(
