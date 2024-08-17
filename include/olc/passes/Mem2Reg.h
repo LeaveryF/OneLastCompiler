@@ -92,7 +92,9 @@ public:
         for (auto *inst : succ->instructions) {
           if (auto *phi = dyn_cast<PhiInst>(inst)) {
             if (auto it = phiMap.find(phi); it != phiMap.end()) {
-              phi->setIncomingValueForBlock(renameMap[bb][it->second], bb);
+              if (auto itIncome = renameMap[bb].find(it->second);
+                  itIncome != renameMap[bb].end())
+                phi->setIncomingValueForBlock(itIncome->second, bb);
             }
           } else
             break;
