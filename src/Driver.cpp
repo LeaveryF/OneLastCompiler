@@ -82,8 +82,8 @@ int main(int argc, const char *argv[]) {
 
   asmWriter.printModule(mod);
 
-  ArmWriter armWriter{std::cerr};
-  armWriter.printModule(mod);
+  // ArmWriter armWriter{std::cerr};
+  // armWriter.printModule(mod);
 
   std::cerr << "============\n";
 
