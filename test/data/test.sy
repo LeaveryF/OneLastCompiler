@@ -1,4 +1,11 @@
-int foo() {
-    int a = 5 + 3;
-    return a;
+int main() {
+  int x = 0;
+
+  if (x > 0) {
+    x = 1;
+  } else {
+    x = -1;
+  }
+
+  return 0;
 }

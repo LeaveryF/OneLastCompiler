@@ -23,6 +23,10 @@
 #include <olc/ir/AsmWriter.h>
 #include <olc/ir/IR.h>
 #include <olc/passes/Passes.h>
+#include <olc/passes/DominanceAnalysis.h>
+#include <olc/passes/Mem2Reg.h>
+#include <olc/passes/PassManager.h>
+#include <olc/passes/SimplifyCFGPass.h>
 
 using namespace antlr4;
 using namespace olc;
@@ -89,6 +93,8 @@ int main(int argc, const char *argv[]) {
   PassManager pm;
   pm.addPass(new SimplifyCFGPass{});
   pm.addPass(new ConstantFoldingPass{});
+  pm.addPass(new DominanceAnalysis{});
+  pm.addPass(new Mem2RegPass{});
   // pm.addPass(new DeadCodeEliminationPass{});
 
   pm.run(*mod);

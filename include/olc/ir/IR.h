@@ -6,6 +6,7 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include <set>
 
 #include <olc/Support.h>
 #include <olc/ir/Type.h>
@@ -121,9 +122,12 @@ struct BasicBlock : Value {
   Function *parent;
   std::string label;
   std::list<Instruction *> instructions;
-  // TODO: maintain pred succ states
+
   std::list<BasicBlock *> predecessors;
   std::list<BasicBlock *> successors;
+
+  BasicBlock *idom;
+  std::set<BasicBlock *> dom, domFrontier;
 
   BasicBlock(Function *parent, std::string const &label)
       : Value(Tag::BasicBlock, LabelType::get()), parent(parent), label(label) {
