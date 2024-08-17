@@ -24,8 +24,16 @@ void AssemblyWriter::printGlobal(GlobalVariable *global) {
   os << "\n";
 }
 
-void AssemblyWriter::printFunc(Function *function) {
+void AssemblyWriter::prepareNamesForFunc(Function *function) {
   nameManager.reset();
+  for (auto &bb : function->basicBlocks) {
+    for (auto &instr : bb->instructions) {
+      nameManager.add(instr);
+    }
+  }
+}
+
+void AssemblyWriter::printFunc(Function *function) {
 
   if (function->isBuiltin) {
     os << "declare builtin @" << function->fnName;
@@ -48,6 +56,7 @@ void AssemblyWriter::printFunc(Function *function) {
   if (function->isBuiltin) {
     os << "\n";
   } else {
+    prepareNamesForFunc(function);
     os << " {\n";
     for (auto &bb : function->basicBlocks) {
       printBasicBlock(bb);
@@ -74,9 +83,6 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
   }
 
   for (auto *instr : basicBlock->instructions) {
-    assert(instr->getType() && "must have type");
-    if (!instr->getType()->isVoidTy())
-      nameManager.add(instr);
     printInstr(instr);
   }
 }
