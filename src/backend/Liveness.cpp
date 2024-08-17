@@ -18,11 +18,11 @@ LivenessBlockInfo::LivenessBlockInfo(AsmLabel *label) : label(label) {
   }
 }
 
-// in = use U out \ def
+// in = use U (out \ def)
 bool LivenessBlockInfo::updateLiveIn() {
-  VarSetT newInValues = useRegs;
-  set_union(newInValues, outRegs);
+  VarSetT newInValues = outRegs;
   set_subtract(newInValues, defRegs);
+  set_union(newInValues, useRegs);
   bool changed = newInValues.size() != inRegs.size();
   inRegs = std::move(newInValues);
   return changed;
