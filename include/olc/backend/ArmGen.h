@@ -402,14 +402,16 @@ struct ArmGen {
                   // str rx, [ry]
                   // ldr rx, [ry]
                   // str can be removed
-                } else if (stInst->addr == ldInst->addr &&
+                } 
+                else if (stInst->addr == ldInst->addr &&
                     isEqualAsmValue(stInst->offset, ldInst->offset)) {
                   auto *movInst = new AsmMoveInst{};
                   movInst->dst = ldInst->dst;
                   movInst->src = stInst->src;
                   label->push_before(inst, movInst);
                   label->remove(ldInst);
-                  label->remove(stInst);
+                  // label->remove(stInst);
+                  
                   // str rx, [ry]
                   // ldr rz, [ry]
                   // ->
@@ -430,26 +432,7 @@ struct ArmGen {
                 }
               }
             }
-          } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
-            if (inst->Prev) {
-              auto tagp = inst->Prev->tag;
-              if (auto *stInst = dyn_cast<AsmStoreInst>(inst->Prev)) {
-                if (stInst->addr == ldInst->addr &&
-                    isEqualAsmValue(stInst->offset, ldInst->offset)) {
-                  auto *movInst = new AsmMoveInst{};
-                  movInst->dst = ldInst->dst;
-                  movInst->src = stInst->src;
-                  label->push_before(inst, movInst);
-                  label->remove(ldInst);
-                  label->remove(stInst);
-                  // str rx, [ry]
-                  // ldr rz, [ry]
-                  // ->
-                  // mov rx, rz
-                }
-              }
-            }
-          }
+          } 
         }
       }
     }
