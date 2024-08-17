@@ -239,8 +239,11 @@ private:
 
 struct CallInst : Instruction {
   CallInst(BasicBlock *bb, Function *callee, std::vector<Value *> args)
-      : Instruction(bb, callee->getReturnType(), Tag::Call, args) {
-    operands.insert(operands.begin(), callee);
+      : Instruction(bb, callee->getReturnType(), Tag::Call, {}) {
+    addOperand(callee);
+    for (auto *arg : args) {
+      addOperand(arg);
+    }
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::Call; }
