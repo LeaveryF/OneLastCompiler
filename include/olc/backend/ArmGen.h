@@ -525,6 +525,12 @@ struct ArmGen {
             case AsmInst::Tag::Rsb:
               op = "rsb";
               break;
+            case AsmInst::Tag::Smmul:
+              op = "smmul";
+              break;
+            case AsmInst::Tag::And:
+              op = "and";
+              break;
             default:
               olc_unreachable("Unknown");
             }

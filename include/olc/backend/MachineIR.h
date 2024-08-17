@@ -162,6 +162,8 @@ struct AsmInst : IListNode<AsmInst> {
     Lsr,
     Asr,
     Rsb,
+    Smmul,
+    And,
     Cmp,
     Branch,
     Jump,
@@ -197,12 +199,14 @@ struct AsmBinaryInst : AsmInst {
     assert(
         tag == Tag::Add || tag == Tag::Sub || tag == Tag::Mul ||
         tag == Tag::Div || tag == Tag::Mod || tag == Tag::Lsl ||
-        tag == Tag::Lsr || tag == Tag::Asr || tag == Tag::Rsb);
+        tag == Tag::Lsr || tag == Tag::Asr || tag == Tag::Rsb ||
+        tag == Tag::Smmul || tag == Tag::And);
   }
   static bool classof(const AsmInst *v) {
     return v->tag == Tag::Add || v->tag == Tag::Sub || v->tag == Tag::Mul ||
            v->tag == Tag::Div || v->tag == Tag::Mod || v->tag == Tag::Lsl ||
-           v->tag == Tag::Lsr || v->tag == Tag::Asr || v->tag == Tag::Rsb;
+           v->tag == Tag::Lsr || v->tag == Tag::Asr || v->tag == Tag::Rsb ||
+           v->tag == Tag::Smmul || v->tag == Tag::And;
   }
 
   std::vector<AsmValue **> getDefs() override { return {&dst}; }

@@ -54,9 +54,9 @@ std::string CodeWriter::to_string(AsmValue *value) {
 
 void CodeWriter::printInst(AsmInst *inst) {
   static std::vector<std::string> tags = {
-      "add",  "sub",   "mul",  "div",    "mod",        "lsl",    "lsr",
-      "asr",  "rsb",   "cmp",  "branch", "jump",       "return", "move",
-      "load", "store", "call", "cvt",    "loadglobal", "string"};
+      "add",  "sub",   "mul",  "div", "mod",        "lsl",   "lsr",    "asr",
+      "rsb",  "smmul", "and",  "cmp", "branch",     "jump",  "return", "move",
+      "load", "store", "call", "cvt", "loadglobal", "string"};
 
   std::string op = tags[(int)inst->tag];
   if (auto *binInst = dyn_cast<AsmBinaryInst>(inst)) {
