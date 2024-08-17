@@ -518,6 +518,8 @@ struct CodeGen {
             for (unsigned i = 0; i < phiInst->getNumIncomingValues(); i++) {
               auto *pred = phiInst->getIncomingBlock(i);
               auto *value = phiInst->getIncomingValue(i);
+              if (isa<Undef>(value))
+                continue;
               auto *predLabel = labelMap.at(pred);
               auto *predValue = lowerValue<AsmImm::Imm32bit>(value, nullptr);
               predMoves[predLabel].push_back({phiVreg, predValue});
