@@ -411,6 +411,12 @@ struct PhiInst : Instruction {
   BasicBlock *getIncomingBlock(unsigned i) const {
     return cast<BasicBlock>(getOperand(i * 2 + 1));
   }
+
+  Value *getIncomingValue(unsigned i) const {
+    return getOperand(i * 2);
+  }
+
+  unsigned getNumIncomingValues() const { return operands.size() / 2; }
 };
 
 struct Constant : Value {
