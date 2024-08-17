@@ -459,25 +459,27 @@ struct CodeGen {
             asmLabel->terminatorBegin = jumpInst;
           } else if (auto *i2fInst = dyn_cast<IntToFloatInst>(irInst)) {
             auto ireg = lowerValue(i2fInst->getIntValue(), asmLabel);
-            auto freg = AsmReg::makeVReg(AsmType::F32);
+            auto freg1 = AsmReg::makeVReg(AsmType::F32),
+                 freg2 = AsmReg::makeVReg(AsmType::F32);
             auto *asmMovInst = new AsmMoveInst{};
             asmMovInst->src = ireg;
-            asmMovInst->dst = freg;
+            asmMovInst->dst = freg1;
             asmLabel->push_back(asmMovInst);
             auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::i2f};
-            asmCvtInst->src = freg;
-            asmCvtInst->dst = freg;
+            asmCvtInst->src = freg1;
+            asmCvtInst->dst = freg2;
             asmLabel->push_back(asmCvtInst);
-            valueMap[i2fInst] = freg;
+            valueMap[i2fInst] = freg2;
           } else if (auto *f2iInst = dyn_cast<FloatToIntInst>(irInst)) {
             auto freg = lowerValue(f2iInst->getFloatValue(), asmLabel);
+            auto freg_tmp = AsmReg::makeVReg(AsmType::F32);
             auto ireg = AsmReg::makeVReg(AsmType::I32);
             auto *asmCvtInst = new AsmConvertInst{AsmConvertInst::CvtType::f2i};
             asmCvtInst->src = freg;
-            asmCvtInst->dst = freg;
+            asmCvtInst->dst = freg_tmp;
             asmLabel->push_back(asmCvtInst);
             auto *asmMovInst = new AsmMoveInst{};
-            asmMovInst->src = freg;
+            asmMovInst->src = freg_tmp;
             asmMovInst->dst = ireg;
             asmLabel->push_back(asmMovInst);
             valueMap[f2iInst] = ireg;
