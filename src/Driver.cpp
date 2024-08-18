@@ -5,6 +5,7 @@
 // https://github.com/gabriele-tomassetti/antlr-cpp/blob/master/antlr.cpp
 
 #include <fstream>
+#include <getopt.h>
 #include <iostream>
 #include <sstream>
 
@@ -28,29 +29,53 @@
 using namespace antlr4;
 using namespace olc;
 
-int main(int argc, const char *argv[]) {
-  // 多文件批量测试
-  // std::ifstream testin("../test/data.txt");
-  // std::string fname;
-  // std::ofstream logout("logs.txt");
-  // std::ofstream errout("errs.txt");
-  // std::streambuf *oldCerrBuf = std::cerr.rdbuf(errout.rdbuf());
-  // while (std::getline(testin, fname)) {
-  //   logout << fname << ':' << std::endl;
-  //   errout << fname << ':' << std::endl;
-  //   std::cout << fname << ':' << std::endl;
-  //   std::ifstream fin("../test/" + fname);
+int main(int argc, char *argv[]) {
+  std::string outputFilename;
+  std::string inputFilename;
+  bool assemble = true;
+  bool optimize = false;
 
-  // 单文件测试
-  std::string filename;
-  if (argc <= 1) {
-    filename = "../test/data/test.sy";
-  } else {
-    filename = argv[1];
+  int opt;
+  while ((opt = getopt(argc, argv, "So:O:")) != -1) {
+    switch (opt) {
+    case 'S':
+      assemble = true;
+      break;
+    case 'o':
+      outputFilename = optarg;
+      break;
+    case 'O':
+      if (std::string(optarg) == "1") {
+        optimize = true;
+      }
+      break;
+    default:
+      std::cerr << "Usage: " << "olc"
+                << " -S -o <output file> <input file> [-O1]\n";
+      return 1;
+    }
   }
-  std::ifstream fin{filename};
+
+  if (optind < argc) {
+    inputFilename = argv[optind];
+  } else {
+    inputFilename = "../test/data/test.sy";
+    // std::cerr << "olc: fatal error: no input files\n";
+    // return 1;
+  }
+
+  // if (outputFilename.empty()) {
+  //   size_t lastDot = inputFilename.rfind('.');
+  //   if (lastDot != std::string::npos) {
+  //     outputFilename = inputFilename.substr(0, lastDot) + ".s";
+  //   } else {
+  //     outputFilename = inputFilename + ".s";
+  //   }
+  // }
+
+  std::ifstream fin(inputFilename);
   if (!fin) {
-    std::cout << "File not found: " << filename << std::endl;
+    std::cout << "File not found: " << inputFilename << std::endl;
     return 1;
   }
   ANTLRInputStream input(fin);
@@ -103,39 +128,22 @@ int main(int argc, const char *argv[]) {
   auto *asmMod = codegen.asmModule;
 
   std::cerr << "============\n";
-  CodeWriter codeWriter{std::cerr};
-  codeWriter.printModule(asmMod);
 
   std::stringstream ss;
   ArmGen armgen{ss, asmMod};
   armgen.run();
 
   std::cerr << ss.str();
-  std::cout << ss.str();
-  // ArmGen armgen{std::cerr, asmMod};
-  // armgen.run();
   std::cerr << "============\n";
 
-  // LivenessAnalysis liveness;
-  // liveness.runOnFunction(asmMod->getFunction("main"));
-
-  // LinearScan regAlloc{};
-  // regAlloc.runOnFunction(asmMod->getFunction("main"));
-
-  // auto getValName = [&](Value *val) {
-  //   assert(val->isDefVar() && "Value is not a variable");
-  //   if (auto *inst = dyn_cast<Instruction>(val)) {
-  //     return asmWriter.nameManager[inst];
-  //   } else {
-  //     return cast<Argument>(val)->argName;
-  //   }
-  // };
-
-  // for (auto &&[val, intv] : liveness.liveIntervals) {
-  //   std::cout << "Var %" << getValName(val) << " live interval: [" <<
-  //   intv.first
-  //             << ", " << intv.second << "]\n";
-  // }
+  if (assemble) {
+    if (outputFilename.empty()) {
+      std::cout << ss.str();
+    } else {
+      std::ofstream fout(outputFilename);
+      fout << ss.str();
+    }
+  }
 
   return 0;
 }
