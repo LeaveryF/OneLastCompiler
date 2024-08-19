@@ -15,21 +15,26 @@ public:
       return false;
 
     while (true) {
-      bool changed = false;
+      std::vector<std::list<Instruction *>::iterator> toRemove;
       for (auto &bb : function.getBasicBlocks()) {
         for (auto instIter = bb->instructions.rbegin();
              instIter != bb->instructions.rend();) {
-          if ((*instIter)->uses.empty() && !hasSideEffect(*instIter)) {
-            changed = true;
-            auto revToRemove = instIter++;
-            bb->instructions.erase(--revToRemove.base());
+          auto *inst = *instIter;
+          if (inst->uses.empty() && !hasSideEffect(inst)) {
+            toRemove.push_back((++instIter).base());
           } else {
             instIter++;
           }
         }
       }
-      if (!changed)
+      if (toRemove.empty())
         break;
+
+      for (auto &instIter : toRemove) {
+        auto *inst = *instIter;
+        inst->erase();
+        inst->parent->instructions.erase(instIter);
+      }
     }
 
     return false;

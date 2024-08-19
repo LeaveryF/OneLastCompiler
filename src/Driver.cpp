@@ -110,17 +110,17 @@ int main(int argc, char *argv[]) {
   // armWriter.printModule(mod);
 
   std::cerr << "============\n";
+  asmWriter.printModule(mod);
 
   PassManager pm;
   pm.addPass(new SimplifyCFGPass{});
-  pm.addPass(new ConstantFoldingPass{});
+  // pm.addPass(new ConstantFoldingPass{});
   pm.addPass(new DominanceAnalysis{});
   pm.addPass(new Mem2RegPass{});
   // pm.addPass(new ConstantFoldingPass{});
   // pm.addPass(new SCCPPass{});
   pm.addPass(new SimplifyCFGPass{});
 
-  asmWriter.printModule(mod);
 
   pm.addPass(new DCEProPass{});
   pm.addPass(new GVNGCMPass{});
