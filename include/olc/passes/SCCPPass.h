@@ -98,6 +98,7 @@ public:
         }
       }
     }
+    replaceConstants(&function);
     return true;
   }
 
@@ -138,9 +139,9 @@ private:
     } else if (auto *brInst = dyn_cast<BranchInst>(inst)) {
       auto *trueBlock = brInst->getTrueBlock();
       auto *falseBlock = brInst->getFalseBlock();
-      auto *const_cond = getValueState(brInst->getCondition()).value;
-      if (const_cond) {
-        if (const_cond->getInt() == 1) {
+      auto *constCond = getValueState(brInst->getCondition()).value;
+      if (constCond) {
+        if (constCond->getInt() == 1) {
           cfg_worklist.emplace_back(bb, trueBlock);
         } else {
           cfg_worklist.emplace_back(bb, falseBlock);
@@ -181,7 +182,46 @@ private:
     }
   }
 
-private:
+  void replaceConstants(Function *func) {
+    std::vector<Instruction *> to_remove;
+    for (auto *block : func->getBasicBlocks()) {
+      for (auto *inst : block->instructions) {
+        if (auto *constant = getValueState(inst).value) {
+          inst->replaceAllUseWith(constant);
+          to_remove.push_back(inst);
+        }
+      }
+    }
+    for (auto *inst : to_remove) {
+      inst->parent->instructions.remove(inst);
+    }
+    for (auto &bb : func->getBasicBlocks()) {
+      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
+      if (branchInst) {
+        auto *constCond = getValueState(branchInst->getCondition()).value;
+        if (constCond) {
+          auto *trueBlock = branchInst->getTrueBlock();
+          auto *falseBlock = branchInst->getFalseBlock();
+          if (constCond->getInt() == 1) {
+            BranchToJmp(branchInst, trueBlock, falseBlock);
+          } else {
+            BranchToJmp(branchInst, falseBlock, trueBlock);
+          } 
+        }
+      }
+    }
+  }
+
+  void BranchToJmp(
+      BranchInst *branchInst, BasicBlock *trueBlock, BasicBlock *falseBlock) {
+    auto *block = branchInst->parent;
+    auto *jmpInst = new JumpInst(block, trueBlock);
+    block->instructions.push_back(jmpInst);
+    block->instructions.remove(branchInst);
+    block->successors.remove(falseBlock);
+    falseBlock->predecessors.remove(block);
+  }
+
   static const void *ID;
 };
 
