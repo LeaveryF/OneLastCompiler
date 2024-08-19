@@ -13,20 +13,26 @@ public:
   bool runOnFunction(Function &function) override {
     if (function.isBuiltin)
       return false;
-    bool changed = false;
 
-    for (auto &bb : function.getBasicBlocks()) {
-      for (auto instIter = bb->instructions.begin();
-           instIter != bb->instructions.end();) {
-        if ((*instIter)->uses.empty() && !hasSideEffect(*instIter)) {
-          bb->instructions.erase(instIter++);
-        } else {
-          instIter++;
+    while (true) {
+      bool changed = false;
+      for (auto &bb : function.getBasicBlocks()) {
+        for (auto instIter = bb->instructions.rbegin();
+             instIter != bb->instructions.rend();) {
+          if ((*instIter)->uses.empty() && !hasSideEffect(*instIter)) {
+            changed = true;
+            auto revToRemove = instIter++;
+            bb->instructions.erase(--revToRemove.base());
+          } else {
+            instIter++;
+          }
         }
       }
+      if (!changed)
+        break;
     }
 
-    return changed;
+    return false;
   }
 
   bool hasSideEffect(Instruction *inst) const {
