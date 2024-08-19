@@ -246,6 +246,11 @@ struct BinaryInst : Instruction {
     return tag >= Tag::BeginBooleanOp && tag <= Tag::EndBooleanOp;
   }
 
+  bool isCommutable() const {
+    return tag == Tag::Add || tag == Tag::Mul || tag == Tag::Eq ||
+           tag == Tag::Ne;
+  }
+
 private:
   Type *inferType(Tag tag, Value *lhs, Value *rhs) {
     assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
@@ -459,6 +464,16 @@ struct ConstantValue : Constant {
       os << " " << getInt();
     else
       os << " " << getFloat();
+  }
+
+  template <typename F> ConstantValue *map(F &&f) {
+    std::variant<int, float> newVal;
+    if (std::holds_alternative<int>(value))
+      return new ConstantValue{
+          static_cast<int>(std::forward<F>(f)(std::get<int>(value)))};
+    else
+      return new ConstantValue{
+          static_cast<float>(std::forward<F>(f)(std::get<float>(value)))};
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::ConstValue; }

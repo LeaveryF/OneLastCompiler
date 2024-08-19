@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
   // pm.addPass(new ConstantFoldingPass{});
   // pm.addPass(new SCCPPass{});
   pm.addPass(new SimplifyCFGPass{});
-
+  pm.addPass(new CanonicalizePass{});
 
   pm.addPass(new DCEProPass{});
   pm.addPass(new GVNGCMPass{});

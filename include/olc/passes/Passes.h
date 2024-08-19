@@ -7,4 +7,5 @@
 #include <olc/passes/PassManager.h>
 #include <olc/passes/SCCPPass.h>
 #include <olc/passes/SimplifyCFGPass.h>
+#include <olc/passes/CanonicalizePass.h>
 #include <olc/passes/GVNGCMPass.h>
