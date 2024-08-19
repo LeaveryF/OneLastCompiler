@@ -40,6 +40,23 @@ struct ValueState {
       }
     }
   }
+  bool operator!=(const ValueState &rhs) const {
+    if (state != rhs.state) {
+      return true;
+    }
+    if (state == CONST) {
+      if (value->isInt()) {
+        int l = value->isInt();
+        int r = rhs.value->getInt();
+        return l != r;
+      } else {
+        float l = value->getFloat();
+        float r = rhs.value->getFloat();
+        return l != r;
+      }
+    }
+    return false;
+  }
 };
 
 class SCCPPass : public FunctionPass {
@@ -92,8 +109,6 @@ private:
   std::vector<std::pair<BasicBlock *, BasicBlock *>> cfg_worklist;
   std::vector<Instruction *> ssa_worklist;
 
-  Instruction *inst;
-  BasicBlock *bb;
   ValueState prev_state;
   ValueState cur_state;
 
@@ -106,8 +121,7 @@ private:
   }
 
   void visitInst(Instruction *inst) {
-    this->inst = inst;
-    bb = inst->parent;
+    BasicBlock *bb = inst->parent;
     prev_state = getValueState(inst);
     cur_state = prev_state;
 
@@ -156,6 +170,15 @@ private:
           cur_state = {ValueState::BOT};
           return;
         }
+      }
+    } else {
+      cur_state = {ValueState::BOT};
+    }
+    if (cur_state != prev_state) {
+      stateMap[inst] = cur_state;
+      for (auto use : inst->uses) {
+        auto *user = dyn_cast<Instruction>(use.user);
+        ssa_worklist.push_back(user);
       }
     }
   }
