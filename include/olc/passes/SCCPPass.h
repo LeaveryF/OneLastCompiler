@@ -68,10 +68,10 @@ public:
       return false;
     bool modified = false;
 
-    cfg_worklist.emplace_back(std::make_pair(nullptr, function.getEntryBlock()));
+    cfg_worklist.emplace_back(nullptr, function.getEntryBlock());
     for (auto &bb : function.getBasicBlocks())
       for (auto &inst : bb->instructions)
-        stateMap[bb] = {ValueState::State::TOP};
+        stateMap[inst] = {ValueState::State::TOP};
 
     unsigned i = 0, j = 0;
     while (i < cfg_worklist.size() || j < ssa_worklist.size()) {
@@ -114,9 +114,9 @@ private:
 
   ValueState getValueState(Value *inst) {
     if (isa<ConstantValue>(inst)) {
-      prev_state = {ValueState::State::CONST, cast<ConstantValue>(inst)};
+      return {ValueState::State::CONST, cast<ConstantValue>(inst)};
     } else {
-      prev_state = stateMap.at(inst);
+      return stateMap.at(inst);
     }
   }
 
@@ -138,7 +138,7 @@ private:
     } else if (auto *brInst = dyn_cast<BranchInst>(inst)) {
       auto *trueBlock = brInst->getTrueBlock();
       auto *falseBlock = brInst->getFalseBlock();
-      auto *const_cond = dyn_cast<ConstantValue>(brInst->getCondition());
+      auto *const_cond = getValueState(brInst->getCondition()).value;
       if (const_cond) {
         if (const_cond->getInt() == 1) {
           cfg_worklist.emplace_back(bb, trueBlock);
@@ -150,29 +150,32 @@ private:
         cfg_worklist.emplace_back(bb, falseBlock);
       }
     } else if (auto *binInst = dyn_cast<BinaryInst>(inst)) {
-      if (auto lhs = dyn_cast<ConstantValue>(binInst->getLHS())) {
-        if (auto rhs = dyn_cast<ConstantValue>(binInst->getRHS())) {
+      if (auto lhs = getValueState(binInst->getLHS()).value) {
+        if (auto rhs = getValueState(binInst->getRHS()).value) {
           ConstantValue *result = ConstFold(binInst, lhs, rhs);
           cur_state = {ValueState::CONST, result};
-          return;
         }
-      }
-      cur_state = {ValueState::TOP};
-      int num_operands = binInst->getNumOperands();
-      for (int i = 0; i < num_operands; i++) {
-        auto *op = binInst->getOperand(i);
-        if (getValueState(op).isbot()) {
-          cur_state = {ValueState::BOT};
-          return;
+      } else {
+        cur_state = {ValueState::TOP};
+        int num_operands = binInst->getNumOperands();
+        for (int i = 0; i < num_operands; i++) {
+          auto *op = binInst->getOperand(i);
+          if (getValueState(op).isbot()) {
+            cur_state = {ValueState::BOT};
+            break;
+          }
         }
       }
     } else {
       cur_state = {ValueState::BOT};
     }
+
     if (cur_state != prev_state) {
       stateMap[inst] = cur_state;
       for (auto use : inst->uses) {
         auto *user = dyn_cast<Instruction>(use.user);
+        if (isa<LoadInst>(user) || isa<StoreInst>(user))
+          continue;
         ssa_worklist.push_back(user);
       }
     }

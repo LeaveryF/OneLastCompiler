@@ -40,6 +40,54 @@ ConstFold(BinaryInst *binInst, ConstantValue *lhs, ConstantValue *rhs) {
     result = new ConstantValue(lhs->getInt() % rhs->getInt());
     break;
   }
+  case Value::Tag::Lt: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() < rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() < rhs->getFloat());
+    }
+    break;
+  }
+  case Value::Tag::Le: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() <= rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() <= rhs->getFloat());
+    }
+    break;
+  }
+  case Value::Tag::Gt: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() > rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() > rhs->getFloat());
+    }
+    break;
+  }
+  case Value::Tag::Ge: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() >= rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() >= rhs->getFloat());
+    }
+    break;
+  }
+  case Value::Tag::Eq: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() == rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() == rhs->getFloat());
+    }
+    break;
+  }
+  case Value::Tag::Ne: {
+    if (lhs->isInt()) {
+      result = new ConstantValue(lhs->getInt() != rhs->getInt());
+    } else {
+      result = new ConstantValue(lhs->getFloat() != rhs->getFloat());
+    }
+    break;
+  }
   default:
     break;
   }
