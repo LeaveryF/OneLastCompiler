@@ -4,6 +4,8 @@
 
 namespace olc {
 
+ConstantValue *
+ConstFold(BinaryInst *binInst, ConstantValue *lhs, ConstantValue *rhs);
 class ConstantFoldingPass : public FunctionPass {
 public:
   ConstantFoldingPass() : FunctionPass(&ID) {}
@@ -15,7 +17,8 @@ public:
     // 遍历函数中的每一个基本块
     for (auto &block : function.getBasicBlocks()) {
       // 遍历基本块中的每一条指令
-      for (auto it = block->instructions.begin(); it != block->instructions.end(); ) {
+      for (auto it = block->instructions.begin();
+           it != block->instructions.end();) {
         Instruction *inst = *it++;
 
         // 检查是否是二元运算指令
@@ -24,47 +27,7 @@ public:
           if (auto lhs = dyn_cast<ConstantValue>(binInst->getLHS())) {
             if (auto rhs = dyn_cast<ConstantValue>(binInst->getRHS())) {
               // 计算结果
-              ConstantValue *result = nullptr;
-              switch (binInst->tag) {
-                case Value::Tag::Add:
-                  if (lhs->isInt()) {
-                    result = new ConstantValue(lhs->getInt() + rhs->getInt());
-                  } else {
-                    result = new ConstantValue(lhs->getFloat() + rhs->getFloat());
-                  }
-                  break;
-                case Value::Tag::Sub: {
-                  if (lhs->isInt()) {
-                    result = new ConstantValue(lhs->getInt() - rhs->getInt());
-                  } else {
-                    result = new ConstantValue(lhs->getFloat() - rhs->getFloat());
-                  }
-                  break;
-                } 
-                case Value::Tag::Mul: {
-                  if (lhs->isInt()) {
-                    result = new ConstantValue(lhs->getInt() * rhs->getInt());
-                  } else {
-                    result = new ConstantValue(lhs->getFloat() * rhs->getFloat());
-                  }
-                  break;
-                }
-                case Value::Tag::Div: {
-                  if (lhs->isInt()) {
-                    result = new ConstantValue(lhs->getInt() / rhs->getInt());
-                  } else {
-                    result = new ConstantValue(lhs->getFloat() / rhs->getFloat());
-                  }
-                  break;
-                }
-                case Value::Tag::Mod: {
-                  return new ConstantValue(lhs->getInt() % rhs->getInt());
-                  break;
-                }
-                default:
-                  break;
-              }
-
+              ConstantValue *result = ConstFold(binInst, lhs, rhs);
               // 替换指令
               if (result) {
                 inst->replaceAllUseWith(result);
