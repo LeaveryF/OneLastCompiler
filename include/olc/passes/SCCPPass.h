@@ -38,6 +38,23 @@ struct ValueState {
       }
     }
   }
+  bool operator!=(const ValueState &rhs) const {
+    if (state != rhs.state) {
+      return true;
+    }
+    if (state == CONST) {
+      if (value->isInt()) {
+        int l = value->isInt();
+        int r = rhs.value->getInt();
+        return l != r;
+      } else {
+        float l = value->getFloat();
+        float r = rhs.value->getFloat();
+        return l != r;
+      }
+    }
+    return false;
+  }
 };
 
 class StateMap {
@@ -89,6 +106,15 @@ private:
       visit_br(cast<BranchInst>(inst));
     } else if (isa<BinaryInst>(inst)) {
       visit_foldable(cast<BinaryInst>(inst));
+    } else {
+      cur_state = {ValueState::BOT};
+    }
+    if (cur_state != prev_state) {
+      stateMap[inst] = cur_state;
+      for (auto use : inst->uses) {
+        auto *user = dyn_cast<Instruction>(use.user);
+        ssa_worklist.push_back(user);
+      }
     }
   }
   void visit_phi(PhiInst *inst) {
