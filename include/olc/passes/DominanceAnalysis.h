@@ -10,7 +10,7 @@ namespace olc {
 
 class DominanceAnalysis : public FunctionPass {
 public:
-  DominanceAnalysis() : FunctionPass(&ID) {}
+  DominanceAnalysis() : FunctionPass(reinterpret_cast<void *>(0x19260817)) {}
 
   bool runOnFunction(Function &function) override {
     auto *entry = function.getEntryBlock();
@@ -91,7 +91,5 @@ public:
 private:
   static const void *ID;
 };
-
-const void *DominanceAnalysis::ID = reinterpret_cast<void *>(0x19260817);
 
 } // namespace olc

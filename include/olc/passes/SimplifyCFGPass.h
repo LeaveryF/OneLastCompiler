@@ -8,7 +8,7 @@ namespace olc {
 
 class SimplifyCFGPass : public FunctionPass {
 public:
-  SimplifyCFGPass() : FunctionPass(&ID) {}
+  SimplifyCFGPass() : FunctionPass(reinterpret_cast<void *>(0xDEADBEEF)) {}
 
   bool runOnFunction(Function &function) override {
     bool changed = false;
@@ -38,6 +38,5 @@ private:
   static const void *ID;
 };
 
-const void *SimplifyCFGPass::ID = reinterpret_cast<void *>(0xDEADBEEF);
 
 } // namespace olc

@@ -6,3 +6,4 @@
 #include <olc/passes/Mem2Reg.h>
 #include <olc/passes/PassManager.h>
 #include <olc/passes/SimplifyCFGPass.h>
+#include <olc/passes/SCCPPass.h>

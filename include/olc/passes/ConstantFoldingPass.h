@@ -1,3 +1,5 @@
+#pragma once
+
 #include <olc/ir/IR.h>
 #include <olc/passes/Pass.h>
 #include <unordered_map>
@@ -8,7 +10,7 @@ ConstantValue *
 ConstFold(BinaryInst *binInst, ConstantValue *lhs, ConstantValue *rhs);
 class ConstantFoldingPass : public FunctionPass {
 public:
-  ConstantFoldingPass() : FunctionPass(&ID) {}
+  ConstantFoldingPass() : FunctionPass(reinterpret_cast<void *>(0xCF240816)) {}
 
   bool runOnFunction(Function &function) override {
     bool modified = false;
@@ -48,7 +50,5 @@ public:
 private:
   static const void *ID;
 };
-
-const void *ConstantFoldingPass::ID = reinterpret_cast<void *>(0xCF240816);
 
 } // namespace olc

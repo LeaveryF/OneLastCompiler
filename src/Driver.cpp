@@ -4,6 +4,7 @@
 // ref: https://tomassetti.me/getting-started-antlr-cpp/
 // https://github.com/gabriele-tomassetti/antlr-cpp/blob/master/antlr.cpp
 
+#include "olc/passes/SCCPPass.h"
 #include <fstream>
 #include <getopt.h>
 #include <iostream>
@@ -117,6 +118,7 @@ int main(int argc, char *argv[]) {
   pm.addPass(new ConstantFoldingPass{});
   pm.addPass(new DominanceAnalysis{});
   pm.addPass(new Mem2RegPass{});
+  pm.addPass(new SCCPPass{});
   // pm.addPass(new DeadCodeEliminationPass{});
 
   pm.run(*mod);

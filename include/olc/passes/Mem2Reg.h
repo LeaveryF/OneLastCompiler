@@ -11,7 +11,7 @@ namespace olc {
 
 class Mem2RegPass : public FunctionPass {
 public:
-  Mem2RegPass() : FunctionPass(&ID) {}
+  Mem2RegPass() : FunctionPass(reinterpret_cast<void *>(0x29712683)) {}
 
   bool runOnFunction(Function &function) override {
     std::map<AllocaInst *, std::vector<StoreInst *>> allocaDefs;
@@ -114,7 +114,5 @@ public:
 private:
   static const void *ID;
 };
-
-const void *Mem2RegPass::ID = reinterpret_cast<void *>(0x29712683);
 
 } // namespace olc

@@ -61,14 +61,14 @@ struct ValueState {
 
 class SCCPPass : public FunctionPass {
 public:
-  SCCPPass() : FunctionPass(&ID) {}
+  SCCPPass() : FunctionPass(reinterpret_cast<void *>(0x08191034)) {}
 
   bool runOnFunction(Function &function) override {
     if (function.isBuiltin)
       return false;
     bool modified = false;
 
-    cfg_worklist.emplace_back(nullptr, function.getEntryBlock());
+    cfg_worklist.emplace_back(std::make_pair(nullptr, function.getEntryBlock()));
     for (auto &bb : function.getBasicBlocks())
       for (auto &inst : bb->instructions)
         stateMap[bb] = {ValueState::State::TOP};
@@ -136,11 +136,6 @@ private:
         }
       }
     } else if (auto *brInst = dyn_cast<BranchInst>(inst)) {
-      if (!brInst->isConditional()) {
-        auto target = brInst->getCondition();
-        cfg_worklist.emplace_back(bb, target);
-        return;
-      }
       auto *trueBlock = brInst->getTrueBlock();
       auto *falseBlock = brInst->getFalseBlock();
       auto *const_cond = dyn_cast<ConstantValue>(brInst->getCondition());
@@ -186,7 +181,5 @@ private:
 private:
   static const void *ID;
 };
-
-const void *SCCPPass::ID = reinterpret_cast<void *>(0x08191034);
 
 } // namespace olc
