@@ -8,7 +8,7 @@ namespace olc {
 
 class DeadCodeEliminationPass : public FunctionPass {
 public:
-  DeadCodeEliminationPass() : FunctionPass(&ID) {}
+  DeadCodeEliminationPass() : FunctionPass(reinterpret_cast<void *>(0x12345678)) {}
 
   bool runOnFunction(Function &function) override {
     std::set<Value *> liveValues;
@@ -62,7 +62,5 @@ private:
     }
   }
 };
-
-const void *DeadCodeEliminationPass::ID = reinterpret_cast<void *>(0x12345678);
 
 } // namespace olc

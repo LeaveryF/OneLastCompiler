@@ -543,7 +543,7 @@ public:
       // 创建指令 维护CFG
       curBasicBlock->create<JumpInst>(end);
       curBasicBlock->successors.push_back(end);
-      end->predecessors.push_back(btrue);
+      end->predecessors.push_back(curBasicBlock);
     } else {
       earlyExit = false;
     }
@@ -728,7 +728,12 @@ public:
     } else if (ctx->op->getText() == "/") {
       tag = Value::Tag::Div;
     } else {
-      tag = Value::Tag::Mod;
+      // Mod
+      Value *quotient = curBasicBlock->create<BinaryInst>(Value::Tag::Div, left, right);
+      Value *product = curBasicBlock->create<BinaryInst>(Value::Tag::Mul, quotient, right);
+      Value *result = curBasicBlock->create<BinaryInst>(Value::Tag::Sub, left, product);
+      valueMap[ctx] = result;
+      return {};
     }
     // 隐式类型转换
     if (left->getType()->isIntegerTy() && right->getType()->isFloatTy()) {

@@ -1,28 +1,98 @@
-antlr需要运行时环境antlr-runtime 官网有源码提供
+项目介绍:
+项目名称为OneLastCompiler 一个SysY2022语言的编译器
+其功能是将SysY2022语言(一种简化的C语言子集)的源代码(.sy文件)编译为ARMv7指令集的目标代码(.s文件)
+项目使用语言为C++17 基于CMake构建
 
-cmake第一次构建会从github克隆antlr4-runtime
+项目地址:
+开发版本: https://gitlab.eduxiji.net/T202410013203408/compiler
+提交版本: https://gitlab.eduxiji.net/T202410013203408/onelastcompiler
+大赛首页: https://compiler.educg.net/
+比赛章程、技术方案、测试数据、运行时库: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024
 
-/antlr: antlr生成的文件 包括visitor/parser.h/cpp 生成一次后直接使用即可 但是目前还需要完善
-/cmake: antlr相关的cmake构建文件 直接搬antlr-runtime使用说明的 不用修改
-/include: 头文件
-/src: 源文件
-/test: 测试
+项目特色:
+使用CMake构建 跨平台
+架构上分为前端和后端
+前端使用ANTLR生成词法和语法分析器 效率高
+使用ANTLR提供的访问器visitor 通过访问者模式遍历语法树生成IR
+可以识别语法错误和部分语义错误 并给出相应的报错信息
+使用类LLVM的SSA形式的IR
+使用硬件浮点指令 提高效率
+可以链接外部库libsysy.a
+具有优化Pass
 
-antlr官网: https://www.antlr.org/
+项目运行方法:
+git clone到本地
+加载CMakeList.txt
+构建整个项目并运行
+第一次构建会从ANTLR的github克隆antlr4-runtime源码 可能会需要一段时间
+将在build/下生成main.exe可执行文件
+程序输入为SysY2022语言源文件(.sy文件) 输出为ARMv7指令集目标文件(.s文件)
+使用外部库libsysy.a时 将该文件放在build/下
+使用测试脚本时 将脚本文件放在build/下
+测试数据文件放在test/data/下 由于.in和.out文件过大 它们并未放在仓库中
+在开发版本中 主程序接受0个(以test/data/test.sy为输入)或1个参数(指定文件输入)
+在提交版本中 参数形如compiler testcase.sysy -S -o testcase.s -O1
+提交版本会修改头文件名称 可以使用gcc直接编译
+
+硬件环境模拟:
+安装arm-linux-gnueabihf-gcc交叉编译器:
+sudo apt-get install gcc-arm-linux-gnueabihf
+安装QEMU模拟器:
+sudo apt-get install qemu-user-static
+
+项目目录结构:
+antlr/: ANTLR生成的文件 包括lexer/parser/visitor 生成一次后直接使用即可
+cmake/: ANTLR相关的cmake构建文件 来自https://github.com/antlr/antlr4/tree/master/runtime/Cpp/cmake
+include/: 头文件
+src/: 源文件
+test/: 测试文件 包括测试源文件和测试数据文件
+
+参考资料:
+
+更多antlr相关资料 见antlr/README.md
+antlr官网: https://www.antlr.org
 antlr github: https://github.com/antlr/antlr4
-antlr文档: https://github.com/antlr/antlr4/blob/master/doc/index.md
-antlr教程: https://github.com/antlr/antlr4/blob/master/doc/getting-started.md
-antlr构建: https://github.com/antlr/antlr4/blob/master/doc/building-antlr.md
-**antlr c++文档: https://github.com/antlr/antlr4/blob/master/doc/cpp-target.md
-
 antlr c++ runtime文档: https://github.com/antlr/antlr4/tree/master/runtime/Cpp
-antlr c++ cmake文档: https://github.com/antlr/antlr4/tree/master/runtime/Cpp/cmake
-antlr c++ cmake教程: https://beyondtheloop.dev/Antlr-cpp-cmake/
+antlr语法示例: https://github.com/antlr/grammars-v4
 
-**antlr简明教程: https://daichangya.github.io/antlr4-doc/#/
-antlr简明教程: https://wizardforcel.gitbooks.io/antlr4-short-course/content/getting-started.html
-antlr教程: https://tomassetti.me/antlr-mega-tutorial/
-**antlr c++教程: https://tomassetti.me/getting-started-antlr-cpp/
-北航编译实验: https://buaa-se-compiling.github.io/miniSysY-tutorial/
-**antlr runtime api(只找到java的): https://www.antlr.org/api/Java/org/antlr/v4/runtime/package-summary.html
-antlr教程: https://blog.csdn.net/qq_37771475/article/details/106546742
+SysY 语言定义: https://gitlab.eduxiji.net/csc1/nscscc/compiler2023/-/blob/master/SysY2022%E8%AF%AD%E8%A8%80%E5%AE%9A%E4%B9%89-V1.pdf
+SysY 运行时库: https://gitlab.eduxiji.net/csc1/nscscc/compiler2023/-/blob/master/SysY2022%E8%BF%90%E8%A1%8C%E6%97%B6%E5%BA%93-V1.pdf
+C99文档 - ISO/IEC 9899 - n1124: https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1124.pdf
+
+LLVM documentation: https://llvm.org/docs
+LLVM tutorial: https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/index.html
+中文部分: https://kaleidoscope-llvm-tutorial-zh-cn.readthedocs.io/zh-cn/latest/
+中文机翻: https://www.bookstack.cn/read/llvm-guide-zh
+LLVM RTTI: https://llvm.org/docs/HowToSetUpLLVMStyleRTTI.html
+LLVM IR lang ref: https://llvm.org/docs/LangRef.html
+LLVM Programmer Manual: https://llvm.org/docs/ProgrammersManual.html
+Getting Started with LLVM Core Libraries: https://getting-started-with-llvm-core-libraries-zh-cn.readthedocs.io/zh-cn/latest/
+Mapping High Level Constructs to LLVM IR: https://mapping-high-level-constructs-to-llvm-ir.readthedocs.io/en/latest/basic-constructs/
+
+LLVM介绍: https://linux.cn/article-6073-1.html
+IR介绍: https://www.cnblogs.com/whiteBear/p/16717687.html
+SSA IR: https://blog.csdn.net/raojun/article/details/103629894
+Value、User、Use: https://zhuanlan.zhihu.com/p/689591662
+A Tour to LLVM IR (上): https://zhuanlan.zhihu.com/p/66793637
+A Tour to LLVM IR (下): https://zhuanlan.zhihu.com/p/66909226
+
+Compiler Explorer: https://godbolt.org/
+
+ARM和Thumb-2指令集快速参考卡: https://gitlab.eduxiji.net/csc1/nscscc/compiler2021/-/blob/master/ARM%E5%92%8CThumb-2%E6%8C%87%E4%BB%A4%E9%9B%86%E5%BF%AB%E9%80%9F%E5%8F%82%E8%80%83%E5%8D%A1.pdf
+ARM ABI: https://github.com/ARM-software/abi-aa/releases
+ARM ABI Base Standard: https://github.com/ARM-software/abi-aa/blob/2a70c42d62e9c3eb5887fa50b71257f20daca6f9/bsabi32/bsabi32.rst
+ARM Procedure Call Standard: https://github.com/ARM-software/abi-aa/blob/2a70c42d62e9c3eb5887fa50b71257f20daca6f9/aapcs32/aapcs32.rst
+ARM Run-time ABI: https://github.com/ARM-software/abi-aa/blob/2a70c42d62e9c3eb5887fa50b71257f20daca6f9/rtabi32/rtabi32.rst
+ARM开发者官网: https://developer.arm.com/
+ARMv7文档: https://developer.arm.com/documentation/den0013/latest/
+ARM32 ABI 约定 - Microsoft文档: https://learn.microsoft.com/zh-cn/cpp/build/overview-of-arm-abi-conventions
+
+ARM汇编: https://blog.csdn.net/Luckiers/article/details/128221506
+ARM汇编: https://www.cnblogs.com/quan0311/p/15025108.html
+ARM指令集: https://blog.csdn.net/mickey35/article/details/82011449
+GNU汇编语法: https://blog.csdn.net/daocaokafei/article/details/115439936
+VFP: https://www.cnblogs.com/wheater/p/16538217.html
+
+北航 miniSysY 编译实验: https://buaa-se-compiling.github.io/miniSysY-tutorial/
+清华 MiniDecaf 编译实验: https://decaf-lang.github.io/minidecaf-tutorial/
+北大 SysY 编译实验: https://pku-minic.github.io/online-doc/

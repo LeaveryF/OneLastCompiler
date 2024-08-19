@@ -26,6 +26,8 @@ public:
       } else if (auto *FP = dynamic_cast<FunctionPass *>(P)) {
         FP->doInitialization(M);
         for (auto *F : M.functions) {
+          if (F->isBuiltin)
+            continue;
           FP->runOnFunction(*F);
         }
         FP->doFinalization(M);
@@ -36,6 +38,5 @@ public:
 private:
   std::vector<Pass *> Passes;
 };
-
 
 } // namespace olc

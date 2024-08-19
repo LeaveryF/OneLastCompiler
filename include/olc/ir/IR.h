@@ -3,7 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <list>
-#include <memory>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -86,6 +86,17 @@ protected:
   Type *type;
 };
 
+struct Undef : public Value {
+  Undef() : Value(Tag::Undef, VoidType::get()) {}
+
+  static bool classof(const Value *V) { return V->tag == Tag::Undef; }
+
+  static Undef *get() {
+    static Undef undef;
+    return &undef;
+  }
+};
+
 struct User : public Value {
   std::vector<Value *> operands;
 
@@ -102,6 +113,7 @@ struct User : public Value {
   void setOperand(unsigned i, Value *v);
   void addOperand(Value *v);
   size_t getNumOperands() const { return operands.size(); }
+  void removeOperands(unsigned i1, unsigned i2);
 
 private:
   void setOperandWithoutRemoveUse(unsigned i, Value *v);
@@ -122,9 +134,12 @@ struct BasicBlock : Value {
   Function *parent;
   std::string label;
   std::list<Instruction *> instructions;
-  // TODO: maintain pred succ states
+
   std::list<BasicBlock *> predecessors;
   std::list<BasicBlock *> successors;
+
+  BasicBlock *idom;
+  std::set<BasicBlock *> dom, domFrontier;
 
   BasicBlock(Function *parent, std::string const &label)
       : Value(Tag::BasicBlock, LabelType::get()), parent(parent), label(label) {
@@ -137,6 +152,8 @@ struct BasicBlock : Value {
     instructions.push_back(inst);
     return inst;
   }
+
+  void remove_phi_from(BasicBlock *);
 };
 
 struct Argument : Value {
@@ -236,8 +253,11 @@ private:
 
 struct CallInst : Instruction {
   CallInst(BasicBlock *bb, Function *callee, std::vector<Value *> args)
-      : Instruction(bb, callee->getReturnType(), Tag::Call, args) {
-    operands.insert(operands.begin(), callee);
+      : Instruction(bb, callee->getReturnType(), Tag::Call, {}) {
+    addOperand(callee);
+    for (auto *arg : args) {
+      addOperand(arg);
+    }
   }
 
   static bool classof(const Value *V) { return V->tag == Tag::Call; }
@@ -279,7 +299,11 @@ struct ReturnInst : Instruction {
 
   static bool classof(const Value *V) { return V->tag == Tag::Return; }
 
-  Value *getReturnValue() const { return getOperand(0); }
+  Value *getReturnValue() const {
+    if (getNumOperands() > 0)
+      return getOperand(0);
+    return nullptr;
+  }
 };
 
 struct AllocaInst : Instruction {
@@ -289,6 +313,14 @@ struct AllocaInst : Instruction {
   static bool classof(const Value *V) { return V->tag == Tag::Alloca; }
 
   Type *getAllocatedType() const { return getType()->getPointerEltType(); }
+  int getAllocatedSize() const {
+    if (auto *arrTy = dyn_cast<ArrayType>(getAllocatedType())) {
+      assert(!arrTy->getArrayEltType()->isArrayTy() && "invalid");
+      return 4 * arrTy->getSize();
+    } else {
+      return 4;
+    }
+  }
 };
 
 struct StoreInst : Instruction {
@@ -349,6 +381,43 @@ struct FloatToIntInst : Instruction {
   static bool classof(const Value *V) { return V->tag == Tag::FloatToInt; }
 
   Value *getFloatValue() const { return getOperand(0); }
+};
+
+struct PhiInst : Instruction {
+  PhiInst(BasicBlock *bb, Type *type) : Instruction(bb, type, Tag::Phi, {}) {
+    for (auto *pred : bb->predecessors) {
+      addOperand(Undef::get());
+      addOperand(pred);
+    }
+  }
+
+  static bool classof(const Value *V) { return V->tag == Tag::Phi; }
+
+  Value *getIncomingValueForBlock(BasicBlock *bb) const {
+    for (unsigned i = 0; i < operands.size(); i += 2) {
+      if (cast<BasicBlock>(getOperand(i + 1)) == bb)
+        return getOperand(i);
+    }
+    olc_unreachable("No incoming value for block");
+  }
+
+  void setIncomingValueForBlock(Value *val, BasicBlock *bb) {
+    for (unsigned i = 0; i < operands.size(); i += 2) {
+      if (cast<BasicBlock>(getOperand(i + 1)) == bb) {
+        setOperand(i, val);
+        return;
+      }
+    }
+    olc_unreachable("No incoming value for block");
+  }
+
+  BasicBlock *getIncomingBlock(unsigned i) const {
+    return cast<BasicBlock>(getOperand(i * 2 + 1));
+  }
+
+  Value *getIncomingValue(unsigned i) const { return getOperand(i * 2); }
+
+  unsigned getNumIncomingValues() const { return operands.size() / 2; }
 };
 
 struct Constant : Value {
