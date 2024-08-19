@@ -106,8 +106,6 @@ int main(int argc, char *argv[]) {
   CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
   visitor.visitCompUnit(tree);
 
-  asmWriter.printModule(mod);
-
   // ArmWriter armWriter{std::cerr};
   // armWriter.printModule(mod);
 
@@ -121,7 +119,11 @@ int main(int argc, char *argv[]) {
   // pm.addPass(new ConstantFoldingPass{});
   // pm.addPass(new SCCPPass{});
   pm.addPass(new SimplifyCFGPass{});
-  // pm.addPass(new DeadCodeEliminationPass{});
+
+  asmWriter.printModule(mod);
+
+  pm.addPass(new DCEProPass{});
+  pm.addPass(new GVNGCMPass{});
   pm.addPass(new DCEProPass{});
 
   pm.run(*mod);
