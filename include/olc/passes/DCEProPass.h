@@ -18,7 +18,7 @@ public:
     for (auto &bb : function.getBasicBlocks()) {
       for (auto instIter = bb->instructions.begin();
            instIter != bb->instructions.end();) {
-        if (!hasSideEffect(*instIter)) {
+        if ((*instIter)->uses.empty() && !hasSideEffect(*instIter)) {
           bb->instructions.erase(instIter++);
         } else {
           instIter++;
