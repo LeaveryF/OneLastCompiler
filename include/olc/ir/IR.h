@@ -277,6 +277,8 @@ struct BranchInst : Instruction {
   Value *getCondition() const { return getOperand(0); }
   BasicBlock *getTrueBlock() const { return cast<BasicBlock>(getOperand(1)); }
   BasicBlock *getFalseBlock() const { return cast<BasicBlock>(getOperand(2)); }
+
+  bool isConditional() const { return getNumOperands() == 3; }
 };
 
 struct JumpInst : Instruction {
