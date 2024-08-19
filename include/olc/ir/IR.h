@@ -113,6 +113,7 @@ struct User : public Value {
   void setOperand(unsigned i, Value *v);
   void addOperand(Value *v);
   size_t getNumOperands() const { return operands.size(); }
+  void removeOperands(unsigned i1, unsigned i2);
 
 private:
   void setOperandWithoutRemoveUse(unsigned i, Value *v);
@@ -151,6 +152,8 @@ struct BasicBlock : Value {
     instructions.push_back(inst);
     return inst;
   }
+
+  void remove_phi_from(BasicBlock *);
 };
 
 struct Argument : Value {
@@ -412,9 +415,7 @@ struct PhiInst : Instruction {
     return cast<BasicBlock>(getOperand(i * 2 + 1));
   }
 
-  Value *getIncomingValue(unsigned i) const {
-    return getOperand(i * 2);
-  }
+  Value *getIncomingValue(unsigned i) const { return getOperand(i * 2); }
 
   unsigned getNumIncomingValues() const { return operands.size() / 2; }
 };

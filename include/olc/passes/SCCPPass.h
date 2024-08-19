@@ -219,8 +219,13 @@ private:
     block->instructions.push_back(jmpInst);
     block->instructions.remove(branchInst);
     block->successors.remove(falseBlock);
+    for (auto *succBlock : falseBlock->successors) {
+      succBlock->remove_phi_from(falseBlock);
+    }
     falseBlock->predecessors.remove(block);
   }
+
+  
 
   static const void *ID;
 };

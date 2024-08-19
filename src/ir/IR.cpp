@@ -54,4 +54,41 @@ void User::addOperand(Value *v) {
   }
 }
 
+void User::removeOperands(unsigned i1, unsigned i2) {
+  auto backup = std::vector<Value *>{};
+  for (auto i = i2 + 1; i < operands.size(); i++) {
+    backup.push_back(operands[i]);
+  }
+  for (auto i = i1; i < operands.size(); i++) {
+    operands[i]->removeUse(this, i);
+  }
+  operands.erase(operands.begin() + i1, operands.begin() + operands.size());
+  for (auto *op : backup) {
+    addOperand(op);
+  }
+}
+
+void BasicBlock::remove_phi_from(BasicBlock *block) {
+  auto to_remove = std::vector<Instruction *>{};
+  for (auto *inst : instructions) {
+    if (!inst->isPHI())
+      break;
+    for (unsigned i = 1; i < inst->getNumOperands();) {
+      auto *op = inst->getOperand(i);
+      if (op == block) {
+        inst->removeOperands(i - 1, i);
+      } else {
+        i += 2;
+      }
+      if (inst->getNumOperands() == 2) {
+        inst->replaceAllUseWith(inst->getOperand(0));
+        to_remove.push_back(inst);
+      }
+    }
+  }
+  for (auto *inst : to_remove) {
+    instructions.remove(inst);
+  }
+}
+
 } // namespace olc
