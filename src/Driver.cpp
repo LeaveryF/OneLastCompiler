@@ -119,9 +119,10 @@ int main(int argc, char *argv[]) {
   pm.addPass(new DominanceAnalysis{});
   pm.addPass(new Mem2RegPass{});
   // pm.addPass(new ConstantFoldingPass{});
-  pm.addPass(new SCCPPass{});
+  // pm.addPass(new SCCPPass{});
   pm.addPass(new SimplifyCFGPass{});
   // pm.addPass(new DeadCodeEliminationPass{});
+  pm.addPass(new DCEProPass{});
 
   pm.run(*mod);
   asmWriter.printModule(mod);
