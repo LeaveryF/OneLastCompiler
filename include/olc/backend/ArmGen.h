@@ -389,7 +389,7 @@ struct ArmGen {
           if (auto *movInst = dyn_cast<AsmMoveInst>(inst)) {
             if (movInst->src == movInst->dst) {
               // mov rx, rx
-              // mov can be removec
+              // mov can be removed
               label->remove(movInst);
             }
           } else if (auto *ldInst = dyn_cast<AsmLoadInst>(inst)) {
@@ -401,9 +401,9 @@ struct ArmGen {
                   label->remove(ldInst);
                   // str rx, [ry]
                   // ldr rx, [ry]
-                  // str can be removed
-                } 
-                else if (stInst->addr == ldInst->addr &&
+                  // ldr can be removed
+                } else if (
+                    stInst->addr == ldInst->addr &&
                     isEqualAsmValue(stInst->offset, ldInst->offset)) {
                   auto *movInst = new AsmMoveInst{};
                   movInst->dst = ldInst->dst;
@@ -411,7 +411,7 @@ struct ArmGen {
                   label->push_before(inst, movInst);
                   label->remove(ldInst);
                   // label->remove(stInst);
-                  
+
                   // str rx, [ry]
                   // ldr rz, [ry]
                   // ->
@@ -428,11 +428,11 @@ struct ArmGen {
                   label->remove(stInst);
                   // ldr rx, [ry]
                   // str rx, [ry]
-                  // ldr can be removed
+                  // str can be removed
                 }
               }
             }
-          } 
+          }
         }
       }
     }

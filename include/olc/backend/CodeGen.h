@@ -458,7 +458,7 @@ struct CodeGen {
                 int isPower2 = (proposed == 0) ? 1 : 0;
                 // smmul rx, value, r(proposed)
                 // add rx, rx, value
-                // and ry, r(mask-isPower2), rx, lsr #31
+                // and ry, r(mask-isPower2), rx, asr #31
                 // add rx, rx, ry
                 // asr rx, rx, #sh
                 auto reg_res = AsmReg::makeVReg(AsmType::I32);
