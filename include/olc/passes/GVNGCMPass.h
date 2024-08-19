@@ -75,6 +75,7 @@ public:
         size_t hash = calcValueHash(inst);
         if (auto it = hashLeader.find(hash); it != hashLeader.end()) {
           inst->replaceAllUseWith(it->second);
+          inst->erase();
           itInst = bb->instructions.erase(itInst);
           changed = true;
         } else {

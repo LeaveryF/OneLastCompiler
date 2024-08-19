@@ -33,6 +33,7 @@ public:
               // 替换指令
               if (result) {
                 inst->replaceAllUseWith(result);
+                inst->erase();
                 block->instructions.erase(std::prev(it));
                 modified = true;
               }

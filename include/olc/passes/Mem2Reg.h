@@ -61,7 +61,8 @@ public:
       // Remove mem ops and update renameMap to phi refs.
       for (auto itInst = bb->instructions.begin();
            itInst != bb->instructions.end();) {
-        if (allocaDefs.count(dyn_cast<AllocaInst>(*itInst))) {
+        if (auto *alloca = dyn_cast<AllocaInst>(*itInst);
+            allocaDefs.count(alloca)) {
           itInst = bb->instructions.erase(itInst);
           continue;
         } else if (auto *load = dyn_cast<LoadInst>(*itInst)) {
@@ -69,6 +70,7 @@ public:
               allocaDefs.count(alloca)) {
             Value *newVal = renameMap[bb][alloca] ?: Undef::get();
             load->replaceAllUseWith(newVal);
+            load->erase();
             itInst = bb->instructions.erase(itInst);
             continue;
           }
@@ -76,6 +78,7 @@ public:
           if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer());
               allocaDefs.count(alloca)) {
             renameMap[bb][alloca] = store->getValue();
+            store->erase();
             itInst = bb->instructions.erase(itInst);
             continue;
           }

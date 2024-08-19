@@ -220,6 +220,13 @@ struct Instruction : User {
     return V->tag >= Tag::BeginInst && V->tag <= Tag::EndInst;
   }
 
+  void erase() {
+    assert(uses.empty());
+    // Unlink all operands.
+    for (auto i = 0u; i < operands.size(); ++i)
+      setOperand(i, nullptr);
+  }
+
   bool isPHI() const { return tag == Tag::Phi; }
 };
 
