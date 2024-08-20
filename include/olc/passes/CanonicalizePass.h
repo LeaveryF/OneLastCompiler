@@ -10,33 +10,54 @@ class CanonicalizePass : public FunctionPass {
 public:
   CanonicalizePass() : FunctionPass(&ID) {}
 
-  // [C, V] -> [V, C]
+  // Op[C, V] -> Op'[V, C] ; Op = Add, Mul, Lt, Le, Ge, Gt, Eq, Ne
   // Sub[V, C] -> Add[V, -C]
   // Add[V, 0] -> V
-  //
+  // Sub[V, 0] -> V
   Value *canonicalizeBinary(BinaryInst *inst) const {
     auto tag = inst->tag;
     auto *lhs = inst->getLHS(), *rhs = inst->getRHS();
     bool lhsConst = isa<ConstantValue>(lhs), rhsConst = isa<ConstantValue>(rhs);
-    assert((!lhsConst || !rhsConst) && "should run constfold first");
-    if (lhsConst && inst->isCommutable()) {
-      std::swap(lhs, rhs);
-      std::swap(lhsConst, rhsConst);
+    // assert((!lhsConst || !rhsConst) && "should run constfold first");
+    if (lhsConst) {
+      if (inst->isCommutable()) {
+        std::swap(lhs, rhs);
+        std::swap(lhsConst, rhsConst);
+      }
+      if (inst->isCommutableCmp()) {
+        std::swap(lhs, rhs);
+        std::swap(lhsConst, rhsConst);
+        switch (tag) {
+        case Value::Tag::Lt:
+          tag = Value::Tag::Gt;
+          break;
+        case Value::Tag::Le:
+          tag = Value::Tag::Ge;
+          break;
+        case Value::Tag::Ge:
+          tag = Value::Tag::Le;
+          break;
+        case Value::Tag::Gt:
+          tag = Value::Tag::Lt;
+          break;
+        }
+      }
     }
 
-    if (tag == Value::Tag::Sub) {
-      if (rhsConst) {
-        tag = Value::Tag::Add;
-        rhs = cast<ConstantValue>(rhs)->map([](auto &&arg) { return -arg; });
-      }
-    } else if (tag == Value::Tag::Add) {
-      if (rhsConst && cast<ConstantValue>(lhs)->getInt() == 0) {
-        return rhs;
-      }
+    if (tag == Value::Tag::Sub && rhsConst) {
+      rhs = cast<ConstantValue>(rhs)->map([](auto &&arg) { return -arg; });
     }
 
+    if ((tag == Value::Tag::Add || tag == Value::Tag::Sub) && rhsConst &&
+        cast<ConstantValue>(rhs)->getInt() == 0) {
+      return rhs;
+    }
+
+    inst->tag = tag;
     inst->setOperand(0, lhs);
     inst->setOperand(1, rhs);
+
+    return inst;
   }
 
   Value *canonicalizePhi(PhiInst *inst) const {
@@ -74,7 +95,7 @@ public:
         auto itInstNext = std::next(itInst);
         auto *inst = *itInst;
 
-        if (auto *newInst = canonicalize(inst); newInst == inst) {
+        if (auto *newInst = canonicalize(inst); newInst != inst) {
           inst->replaceAllUseWith(newInst);
           itInst = bb->instructions.erase(itInst);
           changed = true;

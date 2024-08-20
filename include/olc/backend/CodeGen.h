@@ -259,26 +259,19 @@ struct CodeGen {
             asmLabel->push_back(asmRetInst);
           } else if (auto *irBinInst = dyn_cast<BinaryInst>(irInst)) {
             auto opTag = convertBinOpTag(irBinInst->tag);
+            assert(
+                opTag != AsmBinaryInst::Tag::Mod && "Mod was optmized in IR");
             if (opTag == AsmBinaryInst::Tag::Mul &&
-                (isa<ConstantValue>(irBinInst->getLHS()) &&
-                     cast<ConstantValue>(irBinInst->getLHS())->isInt() ||
-                 isa<ConstantValue>(irBinInst->getRHS()) &&
-                     cast<ConstantValue>(irBinInst->getRHS())
-                         ->isInt())) { // Mul using integer constant, opt
-              int imm = 0;
-              Value *lhs = nullptr;
-              if (isa<ConstantValue>(irBinInst->getLHS())) {
-                imm = cast<ConstantValue>(irBinInst->getLHS())->getInt();
-                lhs = irBinInst->getRHS();
-              } else {
-                imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
-                lhs = irBinInst->getLHS();
-              }
+                isa<ConstantValue>(irBinInst->getRHS()) &&
+                cast<ConstantValue>(irBinInst->getRHS())
+                    ->isInt()) { // Mul using integer constant, opt
+              int imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
+              Value *lhs = irBinInst->getLHS();
               // assert(
-              //     isa<ConstantValue>(irBinInst->getLHS()) ^
-              //     isa<ConstantValue>(irBinInst->getRHS()));
+              //     !isa<ConstantValue>(irBinInst->getLHS()) &&
+              //     "LHS must mot be a constant");
               if (isa<ConstantValue>(lhs)) {
-                // TODO: remove this later, when constant folding is done
+                // pass now
               } else if (imm < 0) {
                 // pass now, using Mul instruction
               } else if (imm == 0) {
@@ -375,17 +368,17 @@ struct CodeGen {
                      ->isInt())) { // Div using integer constant, opt
               int imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
               auto *lhs = irBinInst->getLHS();
-              assert(imm != 0);
-              // assert(
-              //     isa<ConstantValue>(irBinInst->getLHS()) ^
-              //     isa<ConstantValue>(irBinInst->getRHS()));
+              assert(imm != 0 && "Divisor should not be zero");
               bool neg = false;
               if (imm < 0) {
                 neg = true;
                 imm = -imm;
               }
+              // assert(
+              //     !isa<ConstantValue>(irBinInst->getLHS()) &&
+              //     "LHS must mot be a constant");
               if (isa<ConstantValue>(lhs)) {
-                // TODO: remove this later, when constant folding is done
+                // pass now
               } else if (imm == 1) {
                 // remove
                 if (neg) {
@@ -396,20 +389,10 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = valueMap[lhs];
-                continue;
               } else if ((imm & (imm - 1)) == 0) { // |imm| = 2^n
                 // 被除数为正数 等价于算术右移
                 // 被除数为负数 等价于算术右移+1
                 // 可以使用被除数加上(除数-1)进行修正
-                // dec bin      asr right
-                // -1  11111111 -1  0
-                // -2  11111110 -1  -1
-                // -3  11111101 -2  -1
-                // -4  11111100 -2  -2
-                // -5  11111011 -3  -2
-                // -6  11111010 -3  -3
-                // -7  11111001 -4  -3
-                // -8  11111000 -4  -4
                 // 除数的符号只影响最后的rsb指令存在与否
                 // asr rx, value, #31 @ 取出符号位
                 // add rx, value, rx, lsr #32-sh @ 加上(除数-1)进行修正
@@ -441,7 +424,6 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = reg_res;
-                continue;
               } else { // other all
                 int log = 31 - __builtin_clz(imm);
                 // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934
@@ -500,8 +482,8 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = reg_res;
-                continue;
               }
+              continue; // included all Div inst using constant value in RHS
             }
             if (opTag == AsmBinaryInst::Tag::Cmp) {
               auto *asmCmpInst = new AsmCompareInst{};
@@ -531,18 +513,18 @@ struct CodeGen {
 
                 valueMap[irBinInst] = asmMovTrue->dst;
               }
-            } else { // Add, Sub; Mul, Div, Mod which cannot be optimized
+            } else { // Add, Sub; Mul Div which cannot be optimized
               auto reg_res =
                   AsmReg::makeVReg(convertType(irBinInst->getType()));
               auto *asmBinInst = new AsmBinaryInst{opTag};
-              // TODO: optimize with immediates
-              asmBinInst->lhs = lowerValue(irBinInst->getLHS(), asmLabel);
               // add and sub allows Operand2, but mul and sdiv requires reg
               if (opTag == AsmBinaryInst::Tag::Add ||
-                  opTag == AsmBinaryInst::Tag::Sub) {
+                  opTag == AsmBinaryInst::Tag::Sub) { // Add, Sub
+                asmBinInst->lhs = lowerValue(irBinInst->getLHS(), asmLabel);
                 asmBinInst->rhs =
                     lowerValue<AsmImm::Operand2>(irBinInst->getRHS(), asmLabel);
-              } else {
+              } else { // Mul, Div
+                asmBinInst->lhs = lowerValue(irBinInst->getLHS(), asmLabel);
                 asmBinInst->rhs = lowerValue(irBinInst->getRHS(), asmLabel);
               }
               asmBinInst->dst = reg_res;

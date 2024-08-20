@@ -251,6 +251,10 @@ struct BinaryInst : Instruction {
            tag == Tag::Ne;
   }
 
+  bool isCommutableCmp() const {
+    return tag == Tag::Lt || tag == Tag::Le || tag == Tag::Ge || tag == Tag::Gt;
+  }
+
 private:
   Type *inferType(Tag tag, Value *lhs, Value *rhs) {
     assert(tag >= Tag::BeginBinOp && tag <= Tag::EndBinOp);
