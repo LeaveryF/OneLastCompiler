@@ -153,7 +153,7 @@ struct BasicBlock : Value {
     return inst;
   }
 
-  void remove_phi_from(BasicBlock *);
+  std::vector<Instruction *> remove_phi_from(BasicBlock *);
 };
 
 struct Argument : Value {
