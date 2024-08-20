@@ -47,12 +47,15 @@ public:
         hash_combine(seed, glob->getName());
       } else if (auto *arg = dyn_cast<Argument>(value)) {
         // Only ensure unique inside func itself.
-        hash_combine(seed, function.getArgNo(arg));
+        hash_combine(seed, arg);
       } else if (auto *konst = dyn_cast<ConstantValue>(value)) {
-        if (konst->isInt())
+        if (konst->isInt()) {
+          hash_combine(seed, 1e9 + 7);
           hash_combine(seed, konst->getInt());
-        else
+        } else {
+          hash_combine(seed, 998244353);
           hash_combine(seed, konst->getFloat());
+        }
       } else {
         olc_unreachable("NYI");
       }
