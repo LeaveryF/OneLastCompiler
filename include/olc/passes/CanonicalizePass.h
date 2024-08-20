@@ -97,6 +97,7 @@ public:
 
         if (auto *newInst = canonicalize(inst); newInst != inst) {
           inst->replaceAllUseWith(newInst);
+          inst->erase();
           itInst = bb->instructions.erase(itInst);
           changed = true;
         }
