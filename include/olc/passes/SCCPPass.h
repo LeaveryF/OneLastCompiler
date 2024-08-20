@@ -179,8 +179,8 @@ private:
       auto lhs = getValueState(binInst->getLHS()).value;
       auto rhs = getValueState(binInst->getRHS()).value;
       if (lhs && rhs) {
-          ConstantValue *result = ConstFold(binInst, lhs, rhs);
-          cur_state = {ValueState::CONST, result};
+        ConstantValue *result = ConstFold(binInst, lhs, rhs);
+        cur_state = {ValueState::CONST, result};
       } else {
         cur_state = {ValueState::TOP};
         int num_operands = binInst->getNumOperands();
@@ -220,6 +220,8 @@ private:
       inst->parent->instructions.remove(inst);
     }
     for (auto &bb : func->getBasicBlocks()) {
+      if (bb->instructions.empty())
+        continue;
       auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
       if (branchInst) {
         auto *constCond = getValueState(branchInst->getCondition()).value;
