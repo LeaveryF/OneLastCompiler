@@ -155,7 +155,7 @@ private:
       //   }
       // }
     } else if (auto *brInst = dyn_cast<BranchInst>(inst)) {
-      if (brInst != bb->instructions.back())
+      if (brInst != bb->instructions.Tail)
         return;
       auto *trueBlock = brInst->getTrueBlock();
       auto *falseBlock = brInst->getFalseBlock();
@@ -222,7 +222,7 @@ private:
     for (auto &bb : func->getBasicBlocks()) {
       if (bb->instructions.empty())
         continue;
-      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
+      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.Tail);
       if (branchInst) {
         auto *constCond = getValueState(branchInst->getCondition()).value;
         if (constCond) {
