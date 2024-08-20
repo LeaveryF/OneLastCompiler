@@ -363,9 +363,9 @@ struct CodeGen {
               }
             }
             if (opTag == AsmBinaryInst::Tag::Div &&
-                (isa<ConstantValue>(irBinInst->getRHS()) &&
-                 cast<ConstantValue>(irBinInst->getRHS())
-                     ->isInt())) { // Div using integer constant, opt
+                isa<ConstantValue>(irBinInst->getRHS()) &&
+                cast<ConstantValue>(irBinInst->getRHS())
+                    ->isInt()) { // Div using integer constant, opt
               int imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
               auto *lhs = irBinInst->getLHS();
               assert(imm != 0 && "Divisor should not be zero");
@@ -429,7 +429,6 @@ struct CodeGen {
               } else { // other all
                 int log = 31 - __builtin_clz(imm);
                 // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934
-                std::bitset<32> bits((uint32_t)imm);
                 uint64_t n = ((uint64_t)(1u << (log - 1)) << 32);
                 uint32_t proposed = (uint32_t)(n / imm);
                 uint32_t rem = (uint32_t)(n - (uint64_t)proposed * imm);
@@ -515,6 +514,22 @@ struct CodeGen {
 
                 valueMap[irBinInst] = asmMovTrue->dst;
               }
+            } else if (
+                opTag == AsmBinaryInst::Tag::Sub &&
+                isa<ConstantValue>(irBinInst->getLHS()) &&
+                cast<ConstantValue>(irBinInst->getLHS())->isInt()) {
+              // assert(
+              //     !isa<ConstantValue>(irBinInst->getRHS()) &&
+              //     "RHS must not be a constant");
+              auto reg_res =
+                  AsmReg::makeVReg(convertType(irBinInst->getType()));
+              auto *asmBinInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
+              asmBinInst->lhs = lowerValue(irBinInst->getRHS(), asmLabel);
+              asmBinInst->rhs =
+                  lowerValue<AsmImm::Operand2>(irBinInst->getLHS(), asmLabel);
+              asmBinInst->dst = reg_res;
+              valueMap[irBinInst] = reg_res;
+              asmLabel->push_back(asmBinInst);
             } else { // Add, Sub; Mul Div which cannot be optimized
               auto reg_res =
                   AsmReg::makeVReg(convertType(irBinInst->getType()));
