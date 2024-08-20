@@ -115,12 +115,12 @@ int main(int argc, char *argv[]) {
 
   PassManager pm;
   pm.addPass(new SimplifyCFGPass{});
-  pm.addPass(new ConstantFoldingPass{});
+  // pm.addPass(new ConstantFoldingPass{});
   pm.addPass(new DominanceAnalysis{});
   pm.addPass(new Mem2RegPass{});
   // pm.addPass(new ConstantFoldingPass{});
-  pm.addPass(new SCCPPass{});
-  pm.addPass(new SimplifyCFGPass{});
+  // pm.addPass(new SCCPPass{});
+  // pm.addPass(new SimplifyCFGPass{});
   // pm.addPass(new DeadCodeEliminationPass{});
 
   pm.run(*mod);

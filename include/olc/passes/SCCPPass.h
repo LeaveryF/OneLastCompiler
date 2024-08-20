@@ -64,6 +64,12 @@ public:
   SCCPPass() : FunctionPass(reinterpret_cast<void *>(0x08191034)) {}
 
   bool runOnFunction(Function &function) override {
+    stateMap.clear();
+    marked.clear();
+    cfg_worklist.clear();
+    ssa_worklist.clear();
+    remove_list.clear();
+
     if (function.isBuiltin)
       return false;
     bool modified = false;
@@ -84,6 +90,7 @@ public:
 
         for (auto &inst : curBB->instructions) {
           visitInst(inst);
+          replaceConstant(inst);
         }
       }
       while (j < ssa_worklist.size()) {
@@ -96,6 +103,7 @@ public:
             break;
           }
         }
+        replaceConstant(inst);
       }
     }
     replaceConstants(&function);
@@ -109,6 +117,7 @@ private:
   std::set<std::pair<BasicBlock *, BasicBlock *>> marked;
   std::vector<std::pair<BasicBlock *, BasicBlock *>> cfg_worklist;
   std::vector<Instruction *> ssa_worklist;
+  std::vector<Instruction *> remove_list;
 
   ValueState prev_state;
   ValueState cur_state;
@@ -116,6 +125,8 @@ private:
   ValueState getValueState(Value *inst) {
     if (isa<ConstantValue>(inst)) {
       return {ValueState::State::CONST, cast<ConstantValue>(inst)};
+    } else if (isa<Argument>(inst) || isa<Undef>(inst)) {
+      return {ValueState::State::BOT};
     } else {
       return stateMap.at(inst);
     }
@@ -125,7 +136,7 @@ private:
     BasicBlock *bb = inst->parent;
     prev_state = getValueState(inst);
     cur_state = prev_state;
-
+    // FIXME:
     if (auto *phiInst = dyn_cast<PhiInst>(inst)) {
       const int phi_size = phiInst->getNumOperands() / 2;
       for (int i = 0; i < phi_size; i++) {
@@ -136,20 +147,45 @@ private:
           cur_state ^= opState;
         }
       }
+      for (auto *op : phiInst->operands) {
+        if (auto *lable = dyn_cast<BasicBlock>(op)) {
+          if (!marked.count({lable, bb})) {
+            auto phi_list = phiInst->parent->remove_phi_from(lable);
+            for (auto *i : phi_list) {
+              remove_list.push_back(i);
+            }
+          }
+          // bool flag = false;
+          // for (auto *prevBlock : phiInst->parent->predecessors) {
+          //   if (prevBlock == op) {
+          //     flag = true;
+          //     break;
+          //   }
+          // }
+          // if (!flag) {
+          //   phiInst->parent->remove_phi_from(lable);
+          // }
+        }
+      }
     } else if (auto *brInst = dyn_cast<BranchInst>(inst)) {
       auto *trueBlock = brInst->getTrueBlock();
       auto *falseBlock = brInst->getFalseBlock();
       auto *constCond = getValueState(brInst->getCondition()).value;
       if (constCond) {
         if (constCond->getInt() == 1) {
-          cfg_worklist.emplace_back(bb, trueBlock);
+          // cfg_worklist.emplace_back(bb, trueBlock);
+          BranchToJmp(brInst, trueBlock, falseBlock);
         } else {
-          cfg_worklist.emplace_back(bb, falseBlock);
+          // cfg_worklist.emplace_back(bb, falseBlock);
+          BranchToJmp(brInst, falseBlock, trueBlock);
         }
       } else {
         cfg_worklist.emplace_back(bb, trueBlock);
         cfg_worklist.emplace_back(bb, falseBlock);
       }
+    } else if (auto *jmpInst = dyn_cast<JumpInst>(inst)) {
+      auto *target = jmpInst->getTargetBlock();
+      cfg_worklist.emplace_back(bb, target);
     } else if (auto *binInst = dyn_cast<BinaryInst>(inst)) {
       if (auto lhs = getValueState(binInst->getLHS()).value) {
         if (auto rhs = getValueState(binInst->getRHS()).value) {
@@ -183,33 +219,32 @@ private:
   }
 
   void replaceConstants(Function *func) {
-    std::vector<Instruction *> to_remove;
-    for (auto *block : func->getBasicBlocks()) {
-      for (auto *inst : block->instructions) {
-        if (auto *constant = getValueState(inst).value) {
-          inst->replaceAllUseWith(constant);
-          to_remove.push_back(inst);
-        }
-      }
-    }
-    for (auto *inst : to_remove) {
+    // for (auto *block : func->getBasicBlocks()) {
+    //   for (auto *inst : block->instructions) {
+    //     if (auto *constant = getValueState(inst).value) {
+    //       inst->replaceAllUseWith(constant);
+    //       remove_list.push_back(inst);
+    //     }
+    //   }
+    // }
+    for (auto *inst : remove_list) {
       inst->parent->instructions.remove(inst);
     }
-    for (auto &bb : func->getBasicBlocks()) {
-      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
-      if (branchInst) {
-        auto *constCond = getValueState(branchInst->getCondition()).value;
-        if (constCond) {
-          auto *trueBlock = branchInst->getTrueBlock();
-          auto *falseBlock = branchInst->getFalseBlock();
-          if (constCond->getInt() == 1) {
-            BranchToJmp(branchInst, trueBlock, falseBlock);
-          } else {
-            BranchToJmp(branchInst, falseBlock, trueBlock);
-          } 
-        }
-      }
-    }
+    // for (auto &bb : func->getBasicBlocks()) {
+    //   auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
+    //   if (branchInst) {
+    //     auto *constCond = getValueState(branchInst->getCondition()).value;
+    //     if (constCond) {
+    //       auto *trueBlock = branchInst->getTrueBlock();
+    //       auto *falseBlock = branchInst->getFalseBlock();
+    //       if (constCond->getInt() == 1) {
+    //         BranchToJmp(branchInst, trueBlock, falseBlock);
+    //       } else {
+    //         BranchToJmp(branchInst, falseBlock, trueBlock);
+    //       }
+    //     }
+    //   }
+    // }
   }
 
   void BranchToJmp(
@@ -217,15 +252,22 @@ private:
     auto *block = branchInst->parent;
     auto *jmpInst = new JumpInst(block, trueBlock);
     block->instructions.push_back(jmpInst);
-    block->instructions.remove(branchInst);
+    // block->instructions.remove(branchInst);
+    remove_list.push_back(branchInst);
+    stateMap[jmpInst] = {ValueState::State::TOP};
     block->successors.remove(falseBlock);
-    for (auto *succBlock : falseBlock->successors) {
-      succBlock->remove_phi_from(falseBlock);
-    }
+    // for (auto *succBlock : falseBlock->successors) {
+    //   succBlock->remove_phi_from(falseBlock);
+    // }
     falseBlock->predecessors.remove(block);
   }
 
-  
+  void replaceConstant(Instruction *inst) {
+    if (auto *constant = getValueState(inst).value) {
+      inst->replaceAllUseWith(constant);
+      remove_list.push_back(inst);
+    }
+  }
 
   static const void *ID;
 };
