@@ -389,6 +389,7 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = valueMap[lhs];
+                continue;
               } else if ((imm & (imm - 1)) == 0) { // |imm| = 2^n
                 // 被除数为正数 等价于算术右移
                 // 被除数为负数 等价于算术右移+1
@@ -424,6 +425,7 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = reg_res;
+                continue;
               } else { // other all
                 int log = 31 - __builtin_clz(imm);
                 // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934
@@ -482,8 +484,8 @@ struct CodeGen {
                   asmLabel->push_back(asmSubInst);
                 }
                 valueMap[irBinInst] = reg_res;
+                continue;
               }
-              continue; // included all Div inst using constant value in RHS
             }
             if (opTag == AsmBinaryInst::Tag::Cmp) {
               auto *asmCmpInst = new AsmCompareInst{};
