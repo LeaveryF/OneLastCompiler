@@ -19,7 +19,7 @@ public:
     auto *lhs = inst->getLHS(), *rhs = inst->getRHS();
     bool lhsConst = isa<ConstantValue>(lhs), rhsConst = isa<ConstantValue>(rhs);
     // assert((!lhsConst || !rhsConst) && "should run constfold first");
-    if (lhsConst) {
+    if (lhsConst && !rhsConst) {
       if (inst->isCommutable()) {
         std::swap(lhs, rhs);
         std::swap(lhsConst, rhsConst);
@@ -44,13 +44,9 @@ public:
       }
     }
 
-    if (tag == Value::Tag::Sub && rhsConst) {
-      rhs = cast<ConstantValue>(rhs)->map([](auto &&arg) { return -arg; });
-    }
-
     if ((tag == Value::Tag::Add || tag == Value::Tag::Sub) && rhsConst &&
-        cast<ConstantValue>(rhs)->getInt() == 0) {
-      return rhs;
+        cast<ConstantValue>(rhs)->isZero()) {
+      return lhs;
     }
 
     inst->tag = tag;

@@ -462,6 +462,13 @@ struct ConstantValue : Constant {
   int getInt() const { return std::get<int>(value); }
   float getFloat() const { return std::get<float>(value); }
 
+  bool isZero() const {
+    if (isInt())
+      return getInt() == 0;
+    else
+      return getFloat() == 0.0;
+  }
+
   void print(std::ostream &os) const override {
     getType()->print(os);
     if (isInt())
