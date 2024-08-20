@@ -176,11 +176,11 @@ private:
       auto *target = jmpInst->getTargetBlock();
       cfg_worklist.emplace_back(bb, target);
     } else if (auto *binInst = dyn_cast<BinaryInst>(inst)) {
-      if (auto lhs = getValueState(binInst->getLHS()).value) {
-        if (auto rhs = getValueState(binInst->getRHS()).value) {
+      auto lhs = getValueState(binInst->getLHS()).value;
+      auto rhs = getValueState(binInst->getRHS()).value;
+      if (lhs && rhs) {
           ConstantValue *result = ConstFold(binInst, lhs, rhs);
           cur_state = {ValueState::CONST, result};
-        }
       } else {
         cur_state = {ValueState::TOP};
         int num_operands = binInst->getNumOperands();
@@ -195,7 +195,7 @@ private:
     } else {
       cur_state = {ValueState::BOT};
     }
-
+    auto instTag = inst->tag;
     if (cur_state != prev_state) {
       stateMap[inst] = cur_state;
       for (auto use : inst->uses) {
