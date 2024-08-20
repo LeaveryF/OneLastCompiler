@@ -68,7 +68,7 @@ void User::removeOperands(unsigned i1, unsigned i2) {
   }
 }
 
-void BasicBlock::remove_phi_from(BasicBlock *block) {
+std::vector<Instruction *> BasicBlock::remove_phi_from(BasicBlock *block) {
   auto to_remove = std::vector<Instruction *>{};
   for (auto *inst = instructions.Head; inst; inst = inst->Next) {
     if (!inst->isPHI())
@@ -86,9 +86,10 @@ void BasicBlock::remove_phi_from(BasicBlock *block) {
       }
     }
   }
-  for (auto *inst : to_remove) {
-    instructions.remove(inst);
-  }
+  // for (auto *inst : to_remove) {
+  //   instructions.remove(inst);
+  // }
+  return to_remove;
 }
 
 } // namespace olc
