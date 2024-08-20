@@ -86,19 +86,16 @@ public:
     auto rpo = getFunctionRPO(&function);
 
     for (auto *bb : rpo) {
-      for (auto itInst = bb->instructions.begin();
-           itInst != bb->instructions.end();) {
-        auto itInstNext = std::next(itInst);
-        auto *inst = *itInst;
+      for (auto *inst = bb->instructions.Head; inst;) {
+        auto *instNext = inst->Next;
 
         if (auto *newInst = canonicalize(inst); newInst != inst) {
           inst->replaceAllUseWith(newInst);
           inst->erase();
-          itInst = bb->instructions.erase(itInst);
           changed = true;
         }
 
-        itInst = itInstNext;
+        inst = instNext;
       }
     }
 
