@@ -4,7 +4,6 @@
 // ref: https://tomassetti.me/getting-started-antlr-cpp/
 // https://github.com/gabriele-tomassetti/antlr-cpp/blob/master/antlr.cpp
 
-#include "olc/passes/SCCPPass.h"
 #include <fstream>
 #include <getopt.h>
 #include <iostream>

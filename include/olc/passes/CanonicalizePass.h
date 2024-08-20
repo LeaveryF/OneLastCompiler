@@ -2,8 +2,6 @@
 #include <olc/passes/Pass.h>
 #include <olc/passes/Utils.h>
 
-#include <unordered_map>
-
 namespace olc {
 
 class CanonicalizePass : public FunctionPass {
@@ -39,6 +37,8 @@ public:
           break;
         case Value::Tag::Gt:
           tag = Value::Tag::Lt;
+          break;
+        default:
           break;
         }
       }

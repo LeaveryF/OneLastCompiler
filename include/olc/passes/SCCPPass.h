@@ -1,6 +1,6 @@
 #pragma once
 
-#include "olc/Support.h"
+#include <olc/Support.h>
 #include <olc/ir/IR.h>
 #include <olc/passes/ConstantFoldingPass.h>
 #include <olc/passes/Pass.h>
