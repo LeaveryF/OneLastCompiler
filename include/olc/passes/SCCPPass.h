@@ -70,7 +70,7 @@ public:
 
     cfg_worklist.emplace_back(nullptr, function.getEntryBlock());
     for (auto &bb : function.getBasicBlocks())
-      for (auto &inst : bb->instructions)
+      for (auto *inst = bb->instructions.Head; inst; inst = inst->Next)
         stateMap[inst] = {ValueState::State::TOP};
 
     unsigned i = 0, j = 0;
@@ -82,7 +82,7 @@ public:
         marked.insert(item);
         auto &[preBB, curBB] = item;
 
-        for (auto &inst : curBB->instructions) {
+        for (auto *inst = curBB->instructions.Head; inst; inst = inst->Next) {
           visitInst(inst);
         }
       }
@@ -185,7 +185,7 @@ private:
   void replaceConstants(Function *func) {
     std::vector<Instruction *> to_remove;
     for (auto *block : func->getBasicBlocks()) {
-      for (auto *inst : block->instructions) {
+      for (auto *inst = block->instructions.Head; inst; inst = inst->Next) {
         if (auto *constant = getValueState(inst).value) {
           inst->replaceAllUseWith(constant);
           to_remove.push_back(inst);
@@ -196,7 +196,7 @@ private:
       inst->parent->instructions.remove(inst);
     }
     for (auto &bb : func->getBasicBlocks()) {
-      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.back());
+      auto *branchInst = dyn_cast<BranchInst>(bb->instructions.Tail);
       if (branchInst) {
         auto *constCond = getValueState(branchInst->getCondition()).value;
         if (constCond) {
@@ -206,7 +206,7 @@ private:
             BranchToJmp(branchInst, trueBlock, falseBlock);
           } else {
             BranchToJmp(branchInst, falseBlock, trueBlock);
-          } 
+          }
         }
       }
     }
@@ -224,8 +224,6 @@ private:
     }
     falseBlock->predecessors.remove(block);
   }
-
-  
 
   static const void *ID;
 };

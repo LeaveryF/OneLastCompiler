@@ -19,10 +19,8 @@ public:
     // 遍历函数中的每一个基本块
     for (auto &block : function.getBasicBlocks()) {
       // 遍历基本块中的每一条指令
-      for (auto it = block->instructions.begin();
-           it != block->instructions.end();) {
-        Instruction *inst = *it++;
-
+      for (auto *inst = block->instructions.Head; inst;) {
+        auto *nextInst = inst->Next;
         // 检查是否是二元运算指令
         if (auto binInst = dyn_cast<BinaryInst>(inst)) {
           // 获取操作数
@@ -34,12 +32,13 @@ public:
               if (result) {
                 inst->replaceAllUseWith(result);
                 inst->erase();
-                block->instructions.erase(std::prev(it));
                 modified = true;
               }
             }
           }
         }
+        // TODO: Other operantions.
+        inst = nextInst;
       }
     }
 

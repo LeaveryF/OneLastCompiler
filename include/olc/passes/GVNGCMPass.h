@@ -62,27 +62,23 @@ public:
     std::unordered_map<std::size_t, Value *> hashLeader;
 
     for (auto *bb : rpo) {
-      for (auto itInst = bb->instructions.begin();
-           itInst != bb->instructions.end();) {
-        auto itInstNext = std::next(itInst);
+      for (auto *inst = bb->instructions.Head; inst;) {
+        auto nextInst = inst->Next;
 
-        if (!isWhiteListInst(*itInst)) {
-          itInst = itInstNext;
+        if (!isWhiteListInst(inst)) {
+          inst = nextInst;
           continue;
         }
-
-        auto *inst = *itInst;
         size_t hash = calcValueHash(inst);
         if (auto it = hashLeader.find(hash); it != hashLeader.end()) {
           inst->replaceAllUseWith(it->second);
           inst->erase();
-          itInst = bb->instructions.erase(itInst);
           changed = true;
         } else {
           hashLeader[hash] = inst;
         }
 
-        itInst = itInstNext;
+        inst = nextInst;
       }
     }
 
@@ -111,10 +107,9 @@ public:
     calcDomLevel(function.getEntryBlock());
 
     auto moveInstrToBB = [&](Instruction *inst, BasicBlock *bb) {
-      // TODO: intrusive list for instructions
       inst->parent->instructions.remove(inst);
       inst->parent = bb;
-      bb->instructions.insert(std::prev(bb->instructions.end()), inst);
+      bb->instructions.push_before(bb->instructions.Tail, inst);
     };
     std::function<void(Instruction *)> scheduleEarly;
     scheduleEarly = [&](Instruction *inst) {
@@ -196,14 +191,14 @@ public:
       moveInstrToBB(inst, best);
       // Rearrange the inst with uses considered:
       // find its first use and insert it before that.
-      for (auto bestIt = best->instructions.begin();
-           bestIt != best->instructions.end(); bestIt++) {
-        if (isa<PhiInst>(*bestIt))
+      for (auto *bestInst = best->instructions.Head; bestInst;
+           bestInst = bestInst->Next) {
+        if (isa<PhiInst>(bestInst))
           continue;
         for (auto &use : inst->uses) {
-          if (use.user == *bestIt) {
+          if (use.user == bestInst) {
             best->instructions.remove(inst);
-            best->instructions.insert(bestIt, inst);
+            best->instructions.push_before(bestInst, inst);
             return;
           }
         }
@@ -213,7 +208,7 @@ public:
     // Collect all insts for convinient basicblock modification.
     std::vector<Instruction *> allInsts;
     for (auto *bb : function.basicBlocks)
-      for (auto *inst : bb->instructions)
+      for (auto *inst = bb->instructions.Head; inst; inst = inst->Next)
         allInsts.push_back(inst);
 
     // Schedule now.
@@ -226,15 +221,14 @@ public:
     // Local schedule for better inst selection.
     for (auto *bb : function.basicBlocks) {
       // Fix the cmp insts to be just before the branch.
-      for (auto itInst = bb->instructions.begin();
-           itInst != bb->instructions.end(); itInst++) {
-        if (auto *brInst = dyn_cast<BranchInst>(*itInst)) {
+      for (auto *inst = bb->instructions.Head; inst; inst = inst->Next) {
+        if (auto *brInst = dyn_cast<BranchInst>(inst)) {
           if (auto *cond = dyn_cast<BinaryInst>(brInst->getCondition());
               cond && cond->isCmpOp()) {
             auto *newCmp =
                 new BinaryInst{bb, cond->tag, cond->getLHS(), cond->getRHS()};
             // Insert right before the branch.
-            bb->instructions.insert(itInst, newCmp);
+            bb->instructions.push_before(inst, newCmp);
             brInst->setOperand(0, newCmp);
           }
         }

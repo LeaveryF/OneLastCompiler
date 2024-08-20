@@ -27,7 +27,7 @@ void AssemblyWriter::printGlobal(GlobalVariable *global) {
 void AssemblyWriter::prepareNamesForFunc(Function *function) {
   nameManager.reset();
   for (auto &bb : function->basicBlocks) {
-    for (auto &instr : bb->instructions) {
+    for (auto *instr = bb->instructions.Head; instr; instr = instr->Next) {
       nameManager.add(instr);
     }
   }
@@ -82,7 +82,8 @@ void AssemblyWriter::printBasicBlock(BasicBlock *basicBlock) {
     os << "\n";
   }
 
-  for (auto *instr : basicBlock->instructions) {
+  for (auto *instr = basicBlock->instructions.Head; instr;
+       instr = instr->Next) {
     printInstr(instr);
   }
 }

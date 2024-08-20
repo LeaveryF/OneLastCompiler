@@ -70,7 +70,7 @@ void User::removeOperands(unsigned i1, unsigned i2) {
 
 void BasicBlock::remove_phi_from(BasicBlock *block) {
   auto to_remove = std::vector<Instruction *>{};
-  for (auto *inst : instructions) {
+  for (auto *inst = instructions.Head; inst; inst = inst->Next) {
     if (!inst->isPHI())
       break;
     for (unsigned i = 1; i < inst->getNumOperands();) {

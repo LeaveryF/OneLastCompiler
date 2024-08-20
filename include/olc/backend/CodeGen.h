@@ -241,7 +241,8 @@ struct CodeGen {
 
       for (auto *irBB : irFunc->basicBlocks) {
         auto asmLabel = labelMap.at(irBB);
-        for (auto *irInst : irBB->instructions) {
+        for (auto *irInst = irBB->instructions.Head; irInst;
+             irInst = irInst->Next) {
           if (auto *irRetInst = dyn_cast<ReturnInst>(irInst)) {
             auto *asmRetInst = new AsmReturnInst{};
             if (auto *retVal = irRetInst->getReturnValue()) {
@@ -759,7 +760,8 @@ struct CodeGen {
         // Prepare values in vregs for consuming of phi pmove.
         std::map<AsmLabel *, PMove> predMoves;
 
-        for (auto *irInst : irBB->instructions) {
+        for (auto *irInst = irBB->instructions.Head; irInst;
+             irInst = irInst->Next) {
           if (auto *phiInst = dyn_cast<PhiInst>(irInst)) {
             auto *phiVreg = lowerValue(phiInst, asmLabel);
             for (unsigned i = 0; i < phiInst->getNumIncomingValues(); i++) {

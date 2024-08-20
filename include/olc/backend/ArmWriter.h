@@ -108,7 +108,7 @@ public:
   void printGlobalBss(GlobalVariable *);
   void printFunc(Function *);
   void printBasicBlock(BasicBlock *);
-  void printInstr(std::list<Instruction *>::iterator &);
+  void printInstr(Instruction *);
   void printArmInstr(
       const std::string &op, const std::vector<std::string> &operands);
   void printBinInstr(const std::string &op, Instruction *instr);

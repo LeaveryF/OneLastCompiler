@@ -1,7 +1,6 @@
 #pragma once
 
 #include <olc/passes/ConstantFoldingPass.h>
-#include <olc/passes/DCEPass.h>
 #include <olc/passes/DCEProPass.h>
 #include <olc/passes/DominanceAnalysis.h>
 #include <olc/passes/Mem2Reg.h>

@@ -16,7 +16,7 @@ public:
   bool runOnFunction(Function &function) override {
     std::map<AllocaInst *, std::vector<StoreInst *>> allocaDefs;
     for (auto *bb : function.basicBlocks)
-      for (auto *inst : bb->instructions) {
+      for (auto *inst = bb->instructions.Head; inst; inst = inst->Next) {
         if (auto *store = dyn_cast<StoreInst>(inst)) {
           if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer())) {
             if (!alloca->getAllocatedType()->isArrayTy())
@@ -59,40 +59,35 @@ public:
       worklist.pop_back();
 
       // Remove mem ops and update renameMap to phi refs.
-      for (auto itInst = bb->instructions.begin();
-           itInst != bb->instructions.end();) {
-        if (auto *alloca = dyn_cast<AllocaInst>(*itInst);
+      for (auto *inst = bb->instructions.Head; inst;) {
+        auto *nextInst = inst->Next;
+        if (auto *alloca = dyn_cast<AllocaInst>(inst);
             allocaDefs.count(alloca)) {
-          itInst = bb->instructions.erase(itInst);
-          continue;
-        } else if (auto *load = dyn_cast<LoadInst>(*itInst)) {
+          bb->instructions.remove(inst);
+        } else if (auto *load = dyn_cast<LoadInst>(inst)) {
           if (auto *alloca = dyn_cast<AllocaInst>(load->getPointer());
               allocaDefs.count(alloca)) {
             Value *newVal = renameMap[bb][alloca] ?: Undef::get();
             load->replaceAllUseWith(newVal);
             load->erase();
-            itInst = bb->instructions.erase(itInst);
-            continue;
           }
-        } else if (auto *store = dyn_cast<StoreInst>(*itInst)) {
+        } else if (auto *store = dyn_cast<StoreInst>(inst)) {
           if (auto *alloca = dyn_cast<AllocaInst>(store->getPointer());
               allocaDefs.count(alloca)) {
             renameMap[bb][alloca] = store->getValue();
             store->erase();
-            itInst = bb->instructions.erase(itInst);
-            continue;
           }
-        } else if (auto *phi = dyn_cast<PhiInst>(*itInst)) {
+        } else if (auto *phi = dyn_cast<PhiInst>(inst)) {
           if (auto it = phiMap.find(phi); it != phiMap.end()) {
             renameMap[bb][it->second] = phi;
           }
         }
-        itInst++;
+        inst = nextInst;
       }
 
       // Update all successors to the latest value of renameMap.
       for (auto *succ : bb->successors) {
-        for (auto *inst : succ->instructions) {
+        for (auto *inst = succ->instructions.Head; inst; inst = inst->Next) {
           if (auto *phi = dyn_cast<PhiInst>(inst)) {
             if (auto it = phiMap.find(phi); it != phiMap.end()) {
               if (auto itIncome = renameMap[bb].find(it->second);

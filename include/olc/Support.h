@@ -819,10 +819,6 @@ template <class INode> struct IList;
 template <class T> struct IListNode {
   T *Next = nullptr;
   T *Prev = nullptr;
-  IList<T> *Owner = nullptr;
-
-
-  void remove() { Owner->remove(this); }
 };
 
 template <class INode> struct IList {
@@ -830,7 +826,6 @@ template <class INode> struct IList {
   INode *Tail = nullptr;
 
   void push_back(INode *Node) {
-    Node->Owner = this;
     if (Tail) {
       Tail->Next = Node;
       Node->Prev = Tail;
@@ -841,7 +836,6 @@ template <class INode> struct IList {
   }
 
   void push_front(INode *Node) {
-    Node->Owner = this;
     if (Head) {
       Head->Prev = Node;
       Node->Next = Head;
@@ -852,31 +846,30 @@ template <class INode> struct IList {
   }
 
   void push_before(INode *Before, INode *Node) {
-    Node->Owner = this;
     if (Before->Prev) {
       Before->Prev->Next = Node;
       Node->Prev = Before->Prev;
     } else {
       Head = Node;
+      Node->Prev = nullptr;
     }
     Node->Next = Before;
     Before->Prev = Node;
   }
 
   void push_after(INode *After, INode *Node) {
-    Node->Owner = this;
     if (After->Next) {
       After->Next->Prev = Node;
       Node->Next = After->Next;
     } else {
       Tail = Node;
+      Node->Next = nullptr;
     }
     Node->Prev = After;
     After->Next = Node;
   }
 
   void remove(INode *Node) {
-    Node->Owner = nullptr;
     if (Node->Prev)
       Node->Prev->Next = Node->Next;
     else

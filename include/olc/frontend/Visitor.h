@@ -430,15 +430,15 @@ public:
 
     // void函数 增加ret指令
     if (retType->isVoidTy() &&
-        (curBasicBlock->instructions.size() == 0 ||
-         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
+        (curBasicBlock->instructions.empty() ||
+         !isa<ReturnInst>(curBasicBlock->instructions.Tail))) {
       curBasicBlock->create<ReturnInst>();
     }
 
     // 若main函数没有ret, 则加上ret指令
     if (ctx->ID()->getText() == "main" &&
-        (curBasicBlock->instructions.size() == 0 ||
-         !isa<ReturnInst>(curBasicBlock->instructions.back()))) {
+        (curBasicBlock->instructions.empty() ||
+         !isa<ReturnInst>(curBasicBlock->instructions.Tail))) {
       curBasicBlock->create<ReturnInst>(new ConstantValue(0));
     }
 
@@ -723,9 +723,12 @@ public:
       tag = Value::Tag::Div;
     } else {
       // Mod
-      Value *quotient = curBasicBlock->create<BinaryInst>(Value::Tag::Div, left, right);
-      Value *product = curBasicBlock->create<BinaryInst>(Value::Tag::Mul, quotient, right);
-      Value *result = curBasicBlock->create<BinaryInst>(Value::Tag::Sub, left, product);
+      Value *quotient =
+          curBasicBlock->create<BinaryInst>(Value::Tag::Div, left, right);
+      Value *product =
+          curBasicBlock->create<BinaryInst>(Value::Tag::Mul, quotient, right);
+      Value *result =
+          curBasicBlock->create<BinaryInst>(Value::Tag::Sub, left, product);
       valueMap[ctx] = result;
       return {};
     }

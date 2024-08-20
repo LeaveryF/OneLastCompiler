@@ -133,7 +133,7 @@ struct Use {
 struct BasicBlock : Value {
   Function *parent;
   std::string label;
-  std::list<Instruction *> instructions;
+  IList<Instruction> instructions;
 
   std::list<BasicBlock *> predecessors;
   std::list<BasicBlock *> successors;
@@ -210,7 +210,7 @@ private:
   }
 };
 
-struct Instruction : User {
+struct Instruction : User, IListNode<Instruction> {
   BasicBlock *parent;
   Instruction(
       BasicBlock *bb, Type *type, Tag tag, std::vector<Value *> operands = {})
@@ -225,6 +225,7 @@ struct Instruction : User {
     // Unlink all operands.
     for (auto i = 0u; i < operands.size(); ++i)
       setOperand(i, nullptr);
+    parent->instructions.remove(this);
   }
 
   bool isPHI() const { return tag == Tag::Phi; }

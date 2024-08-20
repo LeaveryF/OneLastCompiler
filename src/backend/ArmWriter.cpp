@@ -115,7 +115,7 @@ void ArmWriter::printFunc(Function *function) {
   // 后续在 Call CodeGen 中直接引用 [sp, #0] 开始的一段栈空间
   int callStackSize = 0;
   for (auto &bb : function->basicBlocks) {
-    for (auto &instr : bb->instructions) {
+    for (auto *instr = bb->instructions.Head; instr; instr = instr->Next) {
       if (auto *callInst = dyn_cast<CallInst>(instr)) {
         CallInfo callInfo = arrangeCallInfo(callInst->getArgs());
         callStackSize =
@@ -137,7 +137,7 @@ void ArmWriter::printFunc(Function *function) {
 
   // 给指令结果分配 stack slot
   for (auto *bb : function->basicBlocks) {
-    for (auto *instr : bb->instructions) {
+    for (auto *instr = bb->instructions.Head; instr; instr = instr->Next) {
       if (instr->tag == Value::Tag::Load)
         continue;
       if (instr->tag >= Value::Tag::BeginBooleanOp &&
@@ -199,14 +199,13 @@ void ArmWriter::printFunc(Function *function) {
 
 void ArmWriter::printBasicBlock(BasicBlock *basicBlock) {
   os << getLabel(basicBlock) << ":\n";
-  for (auto instr_it = basicBlock->instructions.begin();
-       instr_it != basicBlock->instructions.end(); ++instr_it) {
-    printInstr(instr_it);
+  for (auto *instr = basicBlock->instructions.Head; instr;
+       instr = instr->Next) {
+    printInstr(instr);
   }
 }
 
-void ArmWriter::printInstr(std::list<Instruction *>::iterator &instr_it) {
-  auto &instr = *instr_it;
+void ArmWriter::printInstr(Instruction *instr) {
   switch (instr->tag) {
   case Value::Tag::Alloca:
   case Value::Tag::Load: {
