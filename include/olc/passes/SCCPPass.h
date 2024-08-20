@@ -108,21 +108,13 @@ public:
       }
     }
     replaceConstants(&function);
+    removeUselessBlocks(&function);
     return true;
   }
 
   std::string getName() const override { return "SCCPPass"; }
 
 private:
-  std::map<Value *, ValueState> stateMap;
-  std::set<std::pair<BasicBlock *, BasicBlock *>> marked;
-  std::vector<std::pair<BasicBlock *, BasicBlock *>> cfg_worklist;
-  std::vector<Instruction *> ssa_worklist;
-  std::vector<Instruction *> remove_list;
-
-  ValueState prev_state;
-  ValueState cur_state;
-
   ValueState getValueState(Value *inst) {
     if (isa<ConstantValue>(inst)) {
       return {ValueState::State::CONST, cast<ConstantValue>(inst)};
@@ -137,7 +129,7 @@ private:
     BasicBlock *bb = inst->parent;
     prev_state = getValueState(inst);
     cur_state = prev_state;
-    
+
     if (auto *phiInst = dyn_cast<PhiInst>(inst)) {
       const int phi_size = phiInst->getNumOperands() / 2;
       for (int i = 0; i < phi_size; i++) {
@@ -262,6 +254,25 @@ private:
     }
   }
 
+  void removeUselessBlocks(Function *func) {
+    auto blocks = std::set<BasicBlock *>();
+    for (auto mark : marked) {
+      blocks.insert(mark.second);
+    }
+    for (auto it = func->basicBlocks.begin(); it != func->basicBlocks.end();) {
+      auto block = *it;
+      if (blocks.find(block) == blocks.end()) {
+        for (auto succ : block->successors) {
+          succ->predecessors.remove(block);
+          succ->remove_phi_from(block);
+        }
+        it = func->basicBlocks.erase(it);
+      } else {
+        it++;
+      }
+    }
+  }
+
   // void replaceConstant(Instruction *inst) {
   //   if (auto *phiInst = dyn_cast<PhiInst>(inst)) {
   //     return;
@@ -273,6 +284,16 @@ private:
   // }
 
   static const void *ID;
+
+private:
+  std::map<Value *, ValueState> stateMap;
+  std::set<std::pair<BasicBlock *, BasicBlock *>> marked;
+  std::vector<std::pair<BasicBlock *, BasicBlock *>> cfg_worklist;
+  std::vector<Instruction *> ssa_worklist;
+  std::vector<Instruction *> remove_list;
+
+  ValueState prev_state;
+  ValueState cur_state;
 };
 
 } // namespace olc
