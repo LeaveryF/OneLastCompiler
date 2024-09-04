@@ -209,7 +209,7 @@ private:
 
   void replaceConstants(Function *func) {
     for (auto *block : func->getBasicBlocks()) {
-      for (auto *inst : block->instructions) {
+      for (auto *inst = block->instructions.Head; inst; inst = inst->Next) {
         if (auto *constant = getValueState(inst).value) {
           inst->replaceAllUseWith(constant);
           remove_list.push_back(inst);
