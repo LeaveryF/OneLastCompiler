@@ -50,8 +50,7 @@ int main(int argc, char *argv[]) {
       }
       break;
     default:
-      std::cerr << "Usage: " << "olc"
-                << " -S -o <output file> <input file> [-O1]\n";
+      std::cerr << "Usage: olc -S -o <output file> <input file> [-O1]\n";
       return 1;
     }
   }
@@ -94,22 +93,18 @@ int main(int argc, char *argv[]) {
   sysy2022Parser parser(&tokens);
   sysy2022Parser::CompUnitContext *tree = parser.compUnit();
 
-  AssemblyWriter asmWriter{std::cerr};
-
-  // 输出到logs.txt
-  // AssemblyWriter asmWriter{logout};
-
   auto *mod = new Module{};
   SymbolTable symbolTable;
   ConstFoldVisitor constFolder(symbolTable);
   CodeGenASTVisitor visitor(mod, constFolder, symbolTable);
   visitor.visitCompUnit(tree);
 
+  AssemblyWriter asmWriter{std::cerr};
+  asmWriter.printModule(mod);
+  std::cerr << "============\n";
+
   // ArmWriter armWriter{std::cerr};
   // armWriter.printModule(mod);
-
-  std::cerr << "============\n";
-  asmWriter.printModule(mod);
 
   PassManager pm;
   pm.addPass(new SimplifyCFGPass{});
@@ -132,15 +127,11 @@ int main(int argc, char *argv[]) {
   CodeGen codegen{mod};
   codegen.run();
   auto *asmMod = codegen.asmModule;
-
   std::cerr << "============\n";
 
   std::stringstream ss;
   ArmGen armgen{ss, asmMod};
   armgen.run();
-
-  std::cerr << ss.str();
-  std::cerr << "============\n";
 
   if (assemble) {
     if (outputFilename.empty()) {
@@ -150,6 +141,7 @@ int main(int argc, char *argv[]) {
       fout << ss.str();
     }
   }
+  std::cerr << "============\n";
 
   return 0;
 }
