@@ -272,7 +272,8 @@ struct CodeGen {
                   "LHS must mot be a constant");
               /* if (isa<ConstantValue>(lhs)) {
                 // pass now
-              } else  */if (imm < 0) {
+              } else  */
+              if (imm < 0) {
                 // pass now, using Mul instruction
               } else if (imm == 0) {
                 // mov rx, #0
@@ -379,9 +380,10 @@ struct CodeGen {
                   "LHS must mot be a constant");
               /* if (isa<ConstantValue>(lhs)) {
                 // pass now
-              } else  */if (imm == 1) {
+              } else  */
+              if (imm == 1) {
                 // remove
-              if (neg) {
+                if (neg) {
                   auto *asmSubInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
                   asmSubInst->lhs = lowerValue(lhs, asmLabel);
                   asmSubInst->rhs = lowerImm<AsmImm::Operand2>(0, asmLabel);
