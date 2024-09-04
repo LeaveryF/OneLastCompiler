@@ -267,12 +267,12 @@ struct CodeGen {
                     ->isInt()) { // Mul using integer constant, opt
               int imm = cast<ConstantValue>(irBinInst->getRHS())->getInt();
               Value *lhs = irBinInst->getLHS();
-              // assert(
-              //     !isa<ConstantValue>(irBinInst->getLHS()) &&
-              //     "LHS must mot be a constant");
-              if (isa<ConstantValue>(lhs)) {
+              assert(
+                  !isa<ConstantValue>(irBinInst->getLHS()) &&
+                  "LHS must mot be a constant");
+              /* if (isa<ConstantValue>(lhs)) {
                 // pass now
-              } else if (imm < 0) {
+              } else  */if (imm < 0) {
                 // pass now, using Mul instruction
               } else if (imm == 0) {
                 // mov rx, #0
@@ -374,14 +374,14 @@ struct CodeGen {
                 neg = true;
                 imm = -imm;
               }
-              // assert(
-              //     !isa<ConstantValue>(irBinInst->getLHS()) &&
-              //     "LHS must mot be a constant");
-              if (isa<ConstantValue>(lhs)) {
+              assert(
+                  !isa<ConstantValue>(irBinInst->getLHS()) &&
+                  "LHS must mot be a constant");
+              /* if (isa<ConstantValue>(lhs)) {
                 // pass now
-              } else if (imm == 1) {
+              } else  */if (imm == 1) {
                 // remove
-                if (neg) {
+              if (neg) {
                   auto *asmSubInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
                   asmSubInst->lhs = lowerValue(lhs, asmLabel);
                   asmSubInst->rhs = lowerImm<AsmImm::Operand2>(0, asmLabel);
@@ -518,9 +518,9 @@ struct CodeGen {
                 opTag == AsmBinaryInst::Tag::Sub &&
                 isa<ConstantValue>(irBinInst->getLHS()) &&
                 cast<ConstantValue>(irBinInst->getLHS())->isInt()) {
-              // assert(
-              //     !isa<ConstantValue>(irBinInst->getRHS()) &&
-              //     "RHS must not be a constant");
+              assert(
+                  !isa<ConstantValue>(irBinInst->getRHS()) &&
+                  "RHS must not be a constant");
               auto reg_res =
                   AsmReg::makeVReg(convertType(irBinInst->getType()));
               auto *asmBinInst = new AsmBinaryInst{AsmBinaryInst::Tag::Rsb};
