@@ -13,30 +13,16 @@ ARM赛道5/12 三等奖
 功能100(20%) 性能50.48(70%) 专家打分82.20(10%)
 总分63.56
 
-获奖名单见: https://mp.weixin.qq.com/s/QAGkyzMGqV6lS4EkyQFBXg
-最终成绩见: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024年编译系统设计赛最终成绩.pdf
-成绩明细见: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024年编译系统设计赛ARM赛道重测明细.pdf
-(其它复核成绩及相关说明见 https://gitlab.eduxiji.net/csc1/nscscc/compiler2024)
+大赛首页: https://compiler.educg.net/#/index?TYPE=COM
+获奖名单: https://mp.weixin.qq.com/s/QAGkyzMGqV6lS4EkyQFBXg
+最终成绩: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024年编译系统设计赛最终成绩.pdf
 
 项目地址:
 开发版本: https://gitlab.eduxiji.net/T202410013203408/compiler
 提交版本: https://gitlab.eduxiji.net/T202410013203408/onelastcompiler
-(提交版本不含test目录 多了预处理脚本run.py 预处理了头文件 可以使用gcc直接编译)
+  (提交版本不含test目录 多了预处理脚本run.py 预处理了头文件 可以使用gcc直接编译)
 赛后仓库公开: https://gitlab.eduxiji.net/educg-group-26172-2487152/T202410013203408-4017
-(是最后一次提交仓库的副本)
-
-大赛地址:
-
-系统能力大赛首页: https://compiler.educg.net
-大赛首页: https://compiler.educg.net/#/index?TYPE=COM
-大赛平台: https://course.educg.net/sv2/indexexp/contest/contest.jsp?contestID=Y056z7F6v3o
-
-大赛gitlab: https://gitlab.eduxiji.net
-比赛章程、技术方案、测试数据、运行时库、决赛数据: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024
-技术培训: https://live.eyunbo.cn/live/138795?uin=1729
-
-赛后通道: https://compiler.educg.net/#/index?TYPE=MN_COM
-赛后通道: https://course.educg.net/sv2/indexexp/contest/contest.jsp?contestID=pRAjDdbXXFM
+  (是最后一次提交仓库的副本)
 
 
 项目特色:
@@ -44,21 +30,21 @@ ARM赛道5/12 三等奖
 架构上分为前中后三端
 前端使用ANTLR生成词法和语法解析器 简易便捷
 使用ANTLR提供的访问器visitor 通过访问者模式直接遍历语法分析树ParseTree生成IR
-(见include/olc/frontend/Visitor.h)
+  (见include/olc/frontend/Visitor.h)
 可以识别语法错误和部分语义错误 并给出相应的报错信息
 中端使用类LLVM的SSA形式的IR
-(见include/olc/ir/IR.h)
+  (见include/olc/ir/IR.h)
 使用硬件浮点指令VFP 提高效率
 可以链接外部库libsysy.a
 具有多个优化Pass 具体优化pass介绍见下文
-(见include/olc/passes/*.h)
+  (见include/olc/passes/*.h)
 项目初期使用基于汇编字符串拼接、纯栈分配的简易后端 保证了功能的正确性
-(见include/olc/backend/ArmWriter.h)
+  (见include/olc/backend/ArmWriter.h)
 项目后期重新构建后端低层次LIR(Machine IR) 便于进行寄存器分配、指令选择、窥孔优化等工作
-(见include/olc/backend/MachineIR.h)
+  (见include/olc/backend/MachineIR.h)
 具有多种中间形式用于调试的输出
-(见include/olc/ir/AsmWriter.h 用于输出IR)
-(见include/olc/backend/CodeWriter.h 用于输出Machine IR)
+  (见include/olc/ir/AsmWriter.h 用于输出IR)
+  (见include/olc/backend/CodeWriter.h 用于输出Machine IR)
 
 
 项目目录结构:
@@ -211,6 +197,20 @@ SCCP: https://blog.liuly.moe/posts/compiler
 北航 miniSysY 编译实验: https://buaa-se-compiling.github.io/miniSysY-tutorial/
 清华 MiniDecaf 编译实验: https://decaf-lang.github.io/minidecaf-tutorial/
 北大 SysY 编译实验: https://pku-minic.github.io/online-doc/
+
+
+大赛地址:
+
+系统能力大赛首页: https://compiler.educg.net
+大赛首页: https://compiler.educg.net/#/index?TYPE=COM
+大赛平台: https://course.educg.net/sv2/indexexp/contest/contest.jsp?contestID=Y056z7F6v3o
+
+大赛gitlab: https://gitlab.eduxiji.net
+比赛章程、技术方案、测试数据、运行时库、决赛数据: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024
+技术培训: https://live.eyunbo.cn/live/138795?uin=1729
+
+赛后通道: https://compiler.educg.net/#/index?TYPE=MN_COM
+赛后通道: https://course.educg.net/sv2/indexexp/contest/contest.jsp?contestID=pRAjDdbXXFM
 
 
 赛事通知/赛事其它相关链接:
