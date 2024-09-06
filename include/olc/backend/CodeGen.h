@@ -428,7 +428,7 @@ struct CodeGen {
                 continue;
               } else { // other all
                 int log = 31 - __builtin_clz(imm);
-                // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934
+                // https://gitlab.eduxiji.net/educg-group-18973-1895971/compiler2023-202310006201934/-/blob/submit/src/backend/CodeGen.cpp#L1114
                 uint64_t n = ((uint64_t)(1u << (log - 1)) << 32);
                 uint32_t proposed = (uint32_t)(n / imm);
                 uint32_t rem = (uint32_t)(n - (uint64_t)proposed * imm);
