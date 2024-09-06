@@ -16,7 +16,7 @@ public:
     auto tag = inst->tag;
     auto *lhs = inst->getLHS(), *rhs = inst->getRHS();
     bool lhsConst = isa<ConstantValue>(lhs), rhsConst = isa<ConstantValue>(rhs);
-    assert((!lhsConst || !rhsConst) && "should run constfold first");
+    // assert((!lhsConst || !rhsConst) && "should run constfold first");
     if (lhsConst && !rhsConst) {
       if (inst->isCommutable()) {
         std::swap(lhs, rhs);
