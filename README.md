@@ -6,7 +6,8 @@
 
 - 项目介绍:
   
-  项目名称为OneLastCompiler 一个SysY2022语言的编译器  
+  项目名称为OneLastCompiler 一个SysY2022语言的编译器
+  为 2024年全国大学生计算机系统能力大赛-编译系统设计赛-编译系统实现赛 设计  
   其功能是将SysY2022语言(一种简化的C语言子集)的源代码(.sy文件)编译为ARMv7指令集的目标代码(.s文件)  
   项目使用语言为C++17 基于CMake构建  
 
@@ -22,17 +23,20 @@
   功能100(20%) 性能50.48(70%) 专家打分82.20(10%)  
   总分63.56
 
-- 大赛首页:
-  
+- 大赛地址:
+
   大赛首页: https://compiler.educg.net/#/index?TYPE=COM  
+  比赛章程: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024全国大学生计算机系统能力培养大赛编译系统设计赛-章程.pdf  
+  技术方案: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024全国大学生计算机系统能力大赛-编译系统设计编译系统实现赛道技术方案V1.1.pdf  
+  
   获奖名单: https://mp.weixin.qq.com/s/QAGkyzMGqV6lS4EkyQFBXg  
   最终成绩: https://gitlab.eduxiji.net/csc1/nscscc/compiler2024/-/blob/main/2024年编译系统设计赛最终成绩.pdf  
 
 - 项目地址:
   
   现已迁移至github: https://github.com/LeaveryF/OneLastCompiler  
-  开发版本: https://gitlab.eduxiji.net/T202410013203408/compiler  
-  提交版本: https://gitlab.eduxiji.net/T202410013203408/onelastcompiler  
+  开发版本gitlab: https://gitlab.eduxiji.net/T202410013203408/compiler  
+  提交版本gitlab: https://gitlab.eduxiji.net/T202410013203408/onelastcompiler  
   (提交版本不含test目录 多了预处理脚本run.py 预处理了头文件 可以使用gcc直接编译)  
   赛后仓库公开: https://gitlab.eduxiji.net/educg-group-26172-2487152/T202410013203408-4017  
   (是最后一次提交仓库的副本)  
@@ -212,7 +216,6 @@
   清华 MiniDecaf 编译实验: https://decaf-lang.github.io/minidecaf-tutorial/  
   北大 SysY 编译实验: https://pku-minic.github.io/online-doc/  
   
-  
 - 大赛地址:
   
   系统能力大赛首页: https://compiler.educg.net  
@@ -225,7 +228,6 @@
   
   赛后通道: https://compiler.educg.net/#/index?TYPE=MN_COM  
   赛后通道: https://course.educg.net/sv2/indexexp/contest/contest.jsp?contestID=pRAjDdbXXFM  
-  
   
 - 赛事通知/赛事其它相关链接:
   (来自微信公众号-计算机系统能力培养)
